@@ -40,7 +40,7 @@ function buildFilters(query) {
     });
   }
 
-  // Field-specific searches
+  // Field-specific searches — match_phrase_prefix so "ben" matches "Bennett"
   const fieldSearches = {
     title: "title",
     author: "authors",
@@ -53,25 +53,36 @@ function buildFilters(query) {
   for (const [param, field] of Object.entries(fieldSearches)) {
     if (query[param]) {
       must.push({
-        match: { [field]: { query: query[param], fuzziness: "AUTO" } },
+        match_phrase_prefix: { [field]: { query: query[param], max_expansions: 50 } },
       });
     }
   }
 
-  // Exact filters (facets)
-  const termFilters = {
-    author_filter: "authors.keyword",
-    series_filter: "series.keyword",
-    genre_filter: "genres.keyword",
-    publisher_filter: "publisher.keyword",
-    keyword_filter: "keywords.keyword",
-    year_filter: "pub_year",
+  // Facet filters — prefix on .keyword subfield so both facet clicks (full values)
+  // and typed partial values work correctly.
+  const termFilterFields = {
+    author_filter:   { keyword: "authors.keyword" },
+    series_filter:   { keyword: "series.keyword" },
+    genre_filter:    { keyword: "genres.keyword" },
+    publisher_filter:{ keyword: "publisher.keyword" },
+    keyword_filter:  { keyword: "keywords.keyword" },
   };
-  for (const [param, field] of Object.entries(termFilters)) {
-    if (query[param]) {
-      const vals = Array.isArray(query[param]) ? query[param] : [query[param]];
-      filters.push({ terms: { [field]: vals } });
+  for (const [param, fields] of Object.entries(termFilterFields)) {
+    if (!query[param]) continue;
+    const vals = Array.isArray(query[param]) ? query[param] : [query[param]];
+    const clauses = vals.map((v) => ({
+      prefix: { [fields.keyword]: { value: v.toLowerCase() } },
+    }));
+    if (clauses.length === 1) {
+      filters.push(clauses[0]);
+    } else {
+      filters.push({ bool: { should: clauses, minimum_should_match: 1 } });
     }
+  }
+
+  if (query.year_filter) {
+    const vals = Array.isArray(query.year_filter) ? query.year_filter : [query.year_filter];
+    filters.push({ terms: { pub_year: vals.map(Number) } });
   }
 
   if (query.year_from || query.year_to) {
