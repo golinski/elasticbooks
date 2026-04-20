@@ -64,13 +64,13 @@ async function fetchBooks(params) {
     if (Array.isArray(v)) v.forEach((x) => qs.append(k, x));
     else if (v !== "" && v != null) qs.set(k, v);
   });
-  const r = await fetch(`/api/books?${qs}`);
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/api/books?${qs}`);
   if (!r.ok) throw new Error("API error");
   return r.json();
 }
 
 async function fetchStats() {
-  const r = await fetch("/api/stats");
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/api/stats`);
   if (!r.ok) throw new Error("API error");
   return r.json();
 }
