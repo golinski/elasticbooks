@@ -16,6 +16,7 @@ function parseQS() {
     author: p.get("author") || "",
     series: p.get("series") || "",
     genre: p.get("genre") || "",
+    keyword: p.get("keyword") || "",
     publisher: p.get("publisher") || "",
     author_filter: p.getAll("author_filter"),
     series_filter: p.getAll("series_filter"),
@@ -39,6 +40,7 @@ function toQS(state) {
   set("author", state.author);
   set("series", state.series);
   set("genre", state.genre);
+  set("keyword", state.keyword);
   set("publisher", state.publisher);
   state.author_filter.forEach((v) => p.append("author_filter", v));
   state.series_filter.forEach((v) => p.append("series_filter", v));
@@ -78,9 +80,36 @@ async function fetchStats() {
 const PLACEHOLDER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='220' viewBox='0 0 160 220'%3E%3Crect width='160' height='220' fill='%231e1e28'/%3E%3Ctext x='80' y='115' text-anchor='middle' fill='%235a5650' font-size='13' font-family='serif'%3ENo cover%3C/text%3E%3C/svg%3E";
 
-function BookCard({ book, onClick, showScore }) {
+function formatPopularity(n) {
+  if (n == null) return null;
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+
+function BookCard({ book, onClick, sortMode }) {
   const [imgErr, setImgErr] = useState(false);
   const src = !imgErr && book.cover_url ? book.cover_url : PLACEHOLDER;
+
+  let badge = null;
+  if (sortMode === "score" && book._score != null) {
+    badge = (
+      <span className="rating-badge score-badge" title={`Relevance score: ${book._score}`}>
+        ★{book._score.toFixed(2)}
+      </span>
+    );
+  } else if (sortMode === "popularity" && book.ratingNum != null) {
+    badge = (
+      <span className="rating-badge popularity-badge" title={`${book.ratingNum.toLocaleString()} ratings`}>
+        ♥{formatPopularity(book.ratingNum)}
+      </span>
+    );
+  } else if (book.rating != null) {
+    badge = (
+      <span className="rating-badge" title={`Rating: ${(book.rating / 10).toFixed(1)}`}>
+        {(book.rating / 10).toFixed(1)}
+      </span>
+    );
+  }
 
   return (
     <div className="book-card" onClick={() => onClick(book)}>
@@ -94,13 +123,7 @@ function BookCard({ book, onClick, showScore }) {
         {book.volume != null && (
           <span className="vol-badge">#{book.volume}</span>
         )}
-        {showScore && book._score != null ? (
-          <span className="rating-badge score-badge" title="Relevance score">
-            ★{book._score.toFixed(2)}
-          </span>
-        ) : book.rating != null && (
-          <span className="rating-badge">{(book.rating / 10).toFixed(1)}</span>
-        )}
+        {badge}
       </div>
       <div className="card-title">{book.title}</div>
       <div className="card-author">
@@ -370,6 +393,7 @@ const SORT_OPTIONS = [
   { v: "pub_year", l: "Year" },
   { v: "series", l: "Series" },
   { v: "rating", l: "Rating" },
+  { v: "popularity", l: "Popularity (# ratings)" },
   { v: "cdate", l: "Date added" },
   { v: "score", l: "Relevance score" },
 ];
@@ -428,7 +452,7 @@ export default function App() {
 
   const clearAll = useCallback(() => {
     setParams({
-      q: "", title: "", author: "", series: "", genre: "", publisher: "",
+      q: "", title: "", author: "", series: "", genre: "", keyword: "", publisher: "",
       author_filter: [], series_filter: [], genre_filter: [], publisher_filter: [],
       keyword_filter: [],
       year_from: "", year_to: "",
@@ -439,7 +463,7 @@ export default function App() {
   const hasFilters = useMemo(() => {
     return (
       params.q || params.title || params.author || params.series ||
-      params.genre || params.publisher ||
+      params.genre || params.keyword || params.publisher ||
       params.author_filter.length || params.series_filter.length ||
       params.genre_filter.length || params.publisher_filter.length ||
       params.keyword_filter.length ||
@@ -507,6 +531,7 @@ export default function App() {
                 ["author", "Author"],
                 ["series", "Series"],
                 ["genre", "Genre"],
+                ["keyword", "Tag / Keyword"],
                 ["publisher", "Publisher"],
               ].map(([k, label]) => (
                 <div key={k} className="field-search">
@@ -638,6 +663,7 @@ export default function App() {
               {params.author && <Chip label={`author: ${params.author}`} onRemove={() => update({ author: "" })} />}
               {params.series && <Chip label={`series: ${params.series}`} onRemove={() => update({ series: "" })} />}
               {params.genre && <Chip label={`genre: ${params.genre}`} onRemove={() => update({ genre: "" })} />}
+              {params.keyword && <Chip label={`keyword: ${params.keyword}`} onRemove={() => update({ keyword: "" })} />}
               {params.publisher && <Chip label={`publisher: ${params.publisher}`} onRemove={() => update({ publisher: "" })} />}
               {params.author_filter.map((v) => (
                 <Chip key={v} label={`author = ${v}`} onRemove={() => toggleFacet("author_filter", v)} />
@@ -673,7 +699,7 @@ export default function App() {
                   key={book.id}
                   book={book}
                   onClick={setSelected}
-                  showScore={params.sort === "score"}
+                  sortMode={params.sort}
                 />
               ))}
               {data?.books.length === 0 && !loading && (

@@ -48,6 +48,7 @@ function buildFilters(query) {
     genre: "genres",
     keyword: "keywords",
     publisher: "publisher",
+    tag: "keywords",
   };
   for (const [param, field] of Object.entries(fieldSearches)) {
     if (query[param]) {
@@ -107,6 +108,8 @@ function buildSort(sortBy, sortDir) {
       return [{ cdate: { order: dir } }];
     case "score":
       return [{ _score: { order: dir } }, { "title.keyword": { order: "asc" } }];
+    case "popularity":
+      return [{ ratingNum: { order: dir, missing: "_last" } }];
     default:
       return [{ _score: { order: "desc" } }, { "title.keyword": { order: "asc" } }];
   }
