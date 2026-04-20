@@ -1,0 +1,67 @@
+version: "3.9"
+ 
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx1g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    networks:
+      - bookshelf
+ 
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - PORT=3001
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - bookshelf
+    restart: unless-stopped
+ 
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - bookshelf
+    restart: unless-stopped
+ 
+  importer:
+    build: ./backend
+    command: ["node", "import.js"]
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - TELLICO_FILE=/data/collection.tc
+      - COVERS_JSON=/data/covers.json
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - bookshelf
+    profiles:
+      - import
+ 
+volumes:
+  es_data:
+ 
+networks:
+  bookshelf:
