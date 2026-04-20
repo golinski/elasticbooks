@@ -63,6 +63,7 @@ function buildFilters(query) {
     series_filter: "series.keyword",
     genre_filter: "genres.keyword",
     publisher_filter: "publisher.keyword",
+    keyword_filter: "keywords.keyword",
     year_filter: "pub_year",
   };
   for (const [param, field] of Object.entries(termFilters)) {
@@ -104,6 +105,8 @@ function buildSort(sortBy, sortDir) {
       ];
     case "cdate":
       return [{ cdate: { order: dir } }];
+    case "score":
+      return [{ _score: { order: dir } }, { "title.keyword": { order: "asc" } }];
     default:
       return [{ _score: { order: "desc" } }, { "title.keyword": { order: "asc" } }];
   }
@@ -157,6 +160,9 @@ app.get("/api/books", async (req, res) => {
         pub_years: {
           terms: { field: "pub_year", size: 50, order: { _key: "asc" } },
         },
+        keywords: {
+          terms: { field: "keywords.keyword", size: 30, min_doc_count: 1 },
+        },
       },
       _source: true,
     };
@@ -174,6 +180,7 @@ app.get("/api/books", async (req, res) => {
         genres: result.aggregations.genres.buckets,
         publishers: result.aggregations.publishers.buckets,
         pub_years: result.aggregations.pub_years.buckets,
+        keywords: result.aggregations.keywords.buckets,
       },
     });
   } catch (e) {

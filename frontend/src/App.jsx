@@ -21,6 +21,7 @@ function parseQS() {
     series_filter: p.getAll("series_filter"),
     genre_filter: p.getAll("genre_filter"),
     publisher_filter: p.getAll("publisher_filter"),
+    keyword_filter: p.getAll("keyword_filter"),
     year_from: p.get("year_from") || "",
     year_to: p.get("year_to") || "",
     sort: p.get("sort") || "title",
@@ -43,6 +44,7 @@ function toQS(state) {
   state.series_filter.forEach((v) => p.append("series_filter", v));
   state.genre_filter.forEach((v) => p.append("genre_filter", v));
   state.publisher_filter.forEach((v) => p.append("publisher_filter", v));
+  state.keyword_filter.forEach((v) => p.append("keyword_filter", v));
   set("year_from", state.year_from);
   set("year_to", state.year_to);
   if (state.sort !== "title") p.set("sort", state.sort);
@@ -76,7 +78,7 @@ async function fetchStats() {
 const PLACEHOLDER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='220' viewBox='0 0 160 220'%3E%3Crect width='160' height='220' fill='%231e1e28'/%3E%3Ctext x='80' y='115' text-anchor='middle' fill='%235a5650' font-size='13' font-family='serif'%3ENo cover%3C/text%3E%3C/svg%3E";
 
-function BookCard({ book, onClick }) {
+function BookCard({ book, onClick, showScore }) {
   const [imgErr, setImgErr] = useState(false);
   const src = !imgErr && book.cover_url ? book.cover_url : PLACEHOLDER;
 
@@ -92,7 +94,11 @@ function BookCard({ book, onClick }) {
         {book.volume != null && (
           <span className="vol-badge">#{book.volume}</span>
         )}
-        {book.rating != null && (
+        {showScore && book._score != null ? (
+          <span className="rating-badge score-badge" title="Relevance score">
+            ★{book._score.toFixed(2)}
+          </span>
+        ) : book.rating != null && (
           <span className="rating-badge">{(book.rating / 10).toFixed(1)}</span>
         )}
       </div>
@@ -365,6 +371,7 @@ const SORT_OPTIONS = [
   { v: "series", l: "Series" },
   { v: "rating", l: "Rating" },
   { v: "cdate", l: "Date added" },
+  { v: "score", l: "Relevance score" },
 ];
 
 export default function App() {
@@ -423,6 +430,7 @@ export default function App() {
     setParams({
       q: "", title: "", author: "", series: "", genre: "", publisher: "",
       author_filter: [], series_filter: [], genre_filter: [], publisher_filter: [],
+      keyword_filter: [],
       year_from: "", year_to: "",
       sort: "title", dir: "asc", page: 1, size: 40,
     });
@@ -434,6 +442,7 @@ export default function App() {
       params.genre || params.publisher ||
       params.author_filter.length || params.series_filter.length ||
       params.genre_filter.length || params.publisher_filter.length ||
+      params.keyword_filter.length ||
       params.year_from || params.year_to
     );
   }, [params]);
@@ -561,6 +570,14 @@ export default function App() {
                   selected={params.publisher_filter}
                   onToggle={(v) => toggleFacet("publisher_filter", v)}
                 />
+                {facets.keywords?.length > 0 && (
+                  <FacetSection
+                    title="Tags / Keywords"
+                    buckets={facets.keywords}
+                    selected={params.keyword_filter}
+                    onToggle={(v) => toggleFacet("keyword_filter", v)}
+                  />
+                )}
               </>
             )}
           </aside>
@@ -634,6 +651,9 @@ export default function App() {
               {params.publisher_filter.map((v) => (
                 <Chip key={v} label={`publisher = ${v}`} onRemove={() => toggleFacet("publisher_filter", v)} />
               ))}
+              {params.keyword_filter.map((v) => (
+                <Chip key={v} label={`tag: ${v}`} onRemove={() => toggleFacet("keyword_filter", v)} />
+              ))}
               {(params.year_from || params.year_to) && (
                 <Chip
                   label={`year: ${params.year_from || "…"}–${params.year_to || "…"}`}
@@ -653,6 +673,7 @@ export default function App() {
                   key={book.id}
                   book={book}
                   onClick={setSelected}
+                  showScore={params.sort === "score"}
                 />
               ))}
               {data?.books.length === 0 && !loading && (
@@ -984,6 +1005,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
   padding: 2px 6px;
   border-radius: 10px;
 }
+.score-badge { color: #7ecfff; }
 .card-title {
   padding: 7px 8px 2px;
   font-size: .82rem;
