@@ -1042,7 +1042,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .cover-wrap img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 .vol-badge {
