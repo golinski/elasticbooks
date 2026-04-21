@@ -35,17 +35,19 @@ services:
       - bookshelf
     restart: unless-stopped
 
+  # Optional: run the frontend locally (e.g. for testing without Netlify).
+  # Usage: docker compose --profile localfe up
   frontend:
     build: ./frontend
     ports:
       - "3000:80"
-    environment:
-      VITE_API_URL: ""
     depends_on:
       - backend
     networks:
       - bookshelf
     restart: unless-stopped
+    profiles:
+      - localfe
 
   importer:
     build: ./backend

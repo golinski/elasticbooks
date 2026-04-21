@@ -1,0 +1,6 @@
+# Proxy all API calls to the private backend.
+# The user only ever sees your Netlify domain — the target is never exposed.
+/api/*  https://elasticbooks.791748048.xyz/api/:splat  200
+
+# SPA catch-all — must come last.
+/*      /index.html                                     200

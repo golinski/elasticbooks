@@ -9,13 +9,13 @@ export async function fetchBooks(params: SearchParams): Promise<BooksResponse> {
       qs.set(k, String(v));
     }
   });
-  const r = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/books?${qs}`);
+  const r = await fetch(`/api/books?${qs}`);
   if (!r.ok) throw new Error("API error");
   return r.json() as Promise<BooksResponse>;
 }
 
 export async function fetchStats(): Promise<StatsResponse> {
-  const r = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/stats`);
+  const r = await fetch("/api/stats");
   if (!r.ok) throw new Error("API error");
   return r.json() as Promise<StatsResponse>;
 }

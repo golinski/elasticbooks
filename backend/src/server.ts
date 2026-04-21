@@ -14,9 +14,31 @@ const PORT = process.env.PORT ?? 3001;
 const ES_URL = process.env.ELASTICSEARCH_URL ?? "http://localhost:9200";
 const INDEX = "books";
 
+// ALLOWED_ORIGINS: comma-separated list of origins permitted to call the API.
+// Set this env var on your server to your Netlify site URL, e.g.:
+//   ALLOWED_ORIGINS=https://your-site.netlify.app,https://yourdomain.com
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const client = new Client({ node: ES_URL });
 
-app.use(cors());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, same-host) and any
+      // origin that appears in ALLOWED_ORIGINS.  If the env var is empty,
+      // fall back to permissive (useful during local dev).
+      if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    methods: ["GET"],
+  })
+);
 app.use(express.json());
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
