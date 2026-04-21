@@ -127,3 +127,92 @@ The Elasticsearch index is configured with 1 shard / 0 replicas for a single-nod
 environment:
   - "ES_JAVA_OPTS=-Xms1g -Xmx2g"
 ```
+
+
+---
+
+## Deploying to Netlify (frontend) + private server (backend)
+
+### Architecture
+
+```
+Browser  ──►  Netlify CDN  ──►  /api/*  ──proxy──►  elasticbooks.791748048.xyz:3001
+                                /*      ──────────►  index.html (SPA)
+```
+
+The user only ever sees your Netlify domain. The backend URL is never sent to the browser — Netlify rewrites the request server-side before forwarding it.
+
+### 1. Backend — your private server
+
+On your server, run only the backend + Elasticsearch stack:
+
+```bash
+docker compose up -d   # starts elasticsearch + backend; frontend is excluded by default
+```
+
+**Expose the backend over HTTPS.** Netlify's proxy requires the target to be reachable over HTTPS. The easiest way is Caddy (auto-TLS):
+
+```
+# /etc/caddy/Caddyfile
+elasticbooks.791748048.xyz {
+    reverse_proxy localhost:3001
+}
+```
+
+Then start Caddy: `caddy run --config /etc/caddy/Caddyfile`
+
+**Set the CORS allowed origins** so only your Netlify site can call the API:
+
+```bash
+# docker-compose.yml → backend → environment:
+ALLOWED_ORIGINS=https://your-site.netlify.app
+```
+
+Or if you have a custom domain on Netlify:
+
+```bash
+ALLOWED_ORIGINS=https://your-site.netlify.app,https://books.yourdomain.com
+```
+
+### 2. Frontend — Netlify
+
+The `frontend/public/_redirects` file already contains the proxy rule:
+
+```
+/api/*  https://elasticbooks.777888999.xyz/api/:splat  200
+/*      /index.html                                     200
+```
+
+Deploy options:
+
+**Option A — Netlify CLI**
+```bash
+cd frontend
+npm install
+npm run build          # outputs to dist/
+npx netlify deploy --prod --dir dist
+```
+
+**Option B — Git-connected site**
+1. Push the repo to GitHub/GitLab.
+2. In Netlify → New site → connect repo.
+3. Set build settings:
+   - Base directory: `frontend`
+   - Build command: `npm run build`
+   - Publish directory: `frontend/dist`
+
+### 3. Import your collection
+
+```bash
+docker compose run --rm importer
+```
+
+### Local development (without Docker)
+
+```bash
+# Terminal 1 — backend
+cd backend && npm install && npm run build && npm start
+
+# Terminal 2 — frontend (Vite dev server proxies /api → localhost:3001)
+cd frontend && npm install && npm run dev
+```
