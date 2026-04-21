@@ -11,6 +11,7 @@
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@tsconfig/vite-react": "^7.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
