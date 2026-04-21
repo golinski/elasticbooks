@@ -90,7 +90,7 @@ function buildFilters(query: SearchQuery): EsQuery {
     if (vals.length === 0) continue;
 
     const clauses: EsQuery[] = vals.map((v) => ({
-      prefix: { [keywordField]: { value: v.toLowerCase() } },
+      prefix: { [keywordField]: { value: v } },
     }));
 
     filters.push(
