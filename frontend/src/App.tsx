@@ -114,8 +114,8 @@ interface BookCardProps {
   sortMode: SortField;
 }
 
-const cloudinarySmall = (url: string, args: { w: number, h: number, format: string }) => 
-  url.replace("http://", "https://").replace("/upload/", `/upload/c_fit,w_${args.w},h_${args.h}/`).replace(/(\....)?$/,`.${args.format}`);
+const cloudinarySmall = (url: string, w: number = 273, h: number = 410, format: string = "avif") => 
+  url.replace("http://", "https://").replace("/upload/", `/upload/c_fit,w_${w},h_${h}/`).replace(/(\....)?$/,`.${format}`);
 
 function BookCard({ book, onClick, sortMode }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
@@ -146,7 +146,7 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
     <div className="book-card" onClick={() => onClick(book)}>
       <div className="cover-wrap">
         <img
-          src={cloudinarySmall(src, { w: 273, h: 410, format: 'avif' })}
+          src={cloudinarySmall(src)}
           alt={book.title ?? "Unknown"}
           loading="lazy"
           onError={() => setImgErr(true)}
@@ -229,7 +229,7 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
         <div className="modal-body">
           <div className="modal-cover">
             <img
-              src={cloudinarySmall(src, { w: 180, h: 1000, format: 'avif' })}
+              src={cloudinarySmall(src)}
               alt={book.title ?? "Cover"}
               onError={() => setImgErr(true)}
               onClick={() => { if (book.cover_url) setLightbox(true); }}
