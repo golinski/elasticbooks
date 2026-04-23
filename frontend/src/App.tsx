@@ -143,7 +143,7 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
     <div className="book-card" onClick={() => onClick(book)}>
       <div className="cover-wrap">
         <img
-          src={src}
+          src={src.replace("http://", "https://").replace("/upload/", "/upload/c_fit,w_246,h_410/")}
           alt={book.title ?? "Unknown"}
           loading="lazy"
           onError={() => setImgErr(true)}
@@ -226,7 +226,7 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
         <div className="modal-body">
           <div className="modal-cover">
             <img
-              src={src}
+              src={src.replace("http://", "https://")}
               alt={book.title ?? "Cover"}
               onError={() => setImgErr(true)}
               onClick={() => { if (book.cover_url) setLightbox(true); }}
