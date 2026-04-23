@@ -143,7 +143,7 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
     <div className="book-card" onClick={() => onClick(book)}>
       <div className="cover-wrap">
         <img
-          src={src.replace("http://", "https://").replace("/upload/", "/upload/c_fit,w_246,h_410/")}
+          src={src.replace("http://", "https://").replace("/upload/", "/upload/c_fit,w_246,h_410/").replace(/(\....)?$/,'.avif')}
           alt={book.title ?? "Unknown"}
           loading="lazy"
           onError={() => setImgErr(true)}
