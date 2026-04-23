@@ -115,7 +115,7 @@ interface BookCardProps {
 }
 
 const cloudinarySmall = (url: string, w: number = 273, h: number = 410, format: string = "avif") => 
-  url.replace("http://", "https://").replace("/upload/", `/upload/c_fit,w_${w},h_${h}/`).replace(/(\....)?$/,`.${format}`);
+  url.replace("http://", "https://").replace("/upload/", `/upload/c_fit,w_${w},h_${h}/`).replace(/$/,`.${format}`);
 
 function BookCard({ book, onClick, sortMode }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
