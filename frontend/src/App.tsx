@@ -116,7 +116,7 @@ const COVER_RATIO = 3 / 2;
 function clUrl(url: string, w: ClBucket): string {
   if (!url.includes("res.cloudinary.com")) return url;
   const h = Math.round(w * COVER_RATIO);
-  return url.replace(/\/upload\//, `/upload/c_fit,w_${w},h_${h}/`) + ".avif";
+  return url.replace("http://", "https://").replace(/\/upload\//, `/upload/c_fit,w_${w},h_${h}/`) + ".avif";
 }
 
 interface CoverPictureProps {
