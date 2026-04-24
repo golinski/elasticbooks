@@ -113,10 +113,65 @@ const CL_WIDTH_BUCKETS = [120, 160, 200, 273, 360, 480, 640, 800] as const;
 type ClBucket = (typeof CL_WIDTH_BUCKETS)[number];
 const COVER_RATIO = 3 / 2;
 
+// Layout constants — keep in sync with CSS.
+const CARD_MIN_W   = 160; // --card-w default
+const CARD_MIN_W_SM = 130; // --card-w at <=600 px (mobile breakpoint)
+const SIDEBAR_W    = 220; // .sidebar width
+const MAIN_PADDING = 32;  // .main left+right padding (16px each side)
+const GRID_GAP     = 16;  // gap between cards
+
 function clUrl(url: string, w: ClBucket): string {
   if (!url.includes("res.cloudinary.com")) return url;
   const h = Math.round(w * COVER_RATIO);
   return url.replace("http://", "https://").replace(/\/upload\//, `/upload/c_fit,w_${w},h_${h}/`) + ".avif";
+}
+
+/**
+ * Returns a `sizes` string that mirrors the auto-fill grid formula exactly.
+ *
+ * For each breakpoint we compute:
+ *   container = vw - sidebar? - padding
+ *   cols      = floor(container / cardMin)
+ *   colWidth  = (container - gap*(cols-1)) / cols
+ *
+ * We iterate from the widest plausible viewport down so the browser gets the
+ * most specific condition first, falling back to a single-column size last.
+ *
+ * `sidebarOpen` is passed in so toggling the sidebar immediately produces the
+ * right sizes without waiting for a resize event.
+ */
+function useGridItemSizes(sidebarOpen: boolean): string {
+  // We generate sizes at a set of sentinel viewport widths.
+  // The browser picks the first matching condition.
+  const conditions: string[] = [];
+
+  // Sample a range of viewport widths and emit a condition whenever the column
+  // count changes.  We go from large → small so the first match wins.
+  const sidebar = sidebarOpen ? SIDEBAR_W : 0;
+  let prevCols = -1;
+
+  for (let vw = 2400; vw >= 320; vw -= 10) {
+    const isMobile = vw <= 600;
+    const cardMin  = isMobile ? CARD_MIN_W_SM : CARD_MIN_W;
+    const container = vw - sidebar - MAIN_PADDING;
+    if (container <= 0) continue;
+
+    const cols    = Math.max(1, Math.floor(container / cardMin));
+    const colW    = Math.round((container - GRID_GAP * (cols - 1)) / cols);
+
+    if (cols !== prevCols) {
+      conditions.push(`(max-width: ${vw}px) ${colW}px`);
+      prevCols = cols;
+    }
+  }
+
+  // Reverse so widest breakpoints come first (browser reads left-to-right).
+  // Add a safe fallback at the end.
+  const fallbackContainer = 2400 - sidebar - MAIN_PADDING;
+  const fallbackCols = Math.max(1, Math.floor(fallbackContainer / CARD_MIN_W));
+  const fallbackColW = Math.round((fallbackContainer - GRID_GAP * (fallbackCols - 1)) / fallbackCols);
+
+  return [...conditions.reverse(), `${fallbackColW}px`].join(", ");
 }
 
 interface CoverPictureProps {
@@ -171,7 +226,7 @@ function CoverPicture({
 
   return (
     <picture>
-      <source srcSet={srcSet} sizes={sizes} type="image/avif" />
+      <source srcSet={srcSet} sizes={sizes} type="image/jpeg" />
       <img
         src={fallbackSrc}
         alt={alt}
@@ -191,11 +246,13 @@ interface BookCardProps {
   book: Book;
   onClick: (book: Book) => void;
   sortMode: SortField;
+  sidebarOpen: boolean;
 }
 
-function BookCard({ book, onClick, sortMode }: BookCardProps) {
+function BookCard({ book, onClick, sortMode, sidebarOpen }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
   const coverUrl = !imgErr && book.cover_url ? book.cover_url : null;
+  const sizes = useGridItemSizes(sidebarOpen);
 
   let badge: React.ReactNode = null;
   if (sortMode === "score" && book._score != null) {
@@ -224,7 +281,7 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
         <CoverPicture
           url={coverUrl ?? PLACEHOLDER}
           alt={book.title ?? "Unknown"}
-          sizes="(max-width:600px) 130px, 160px"
+          sizes={sizes}
           onError={() => setImgErr(true)}
           loading="lazy"
         />
@@ -825,6 +882,7 @@ export default function App() {
                   book={book}
                   onClick={setSelected}
                   sortMode={params.sort}
+                  sidebarOpen={sidebarOpen}
                 />
               ))}
               {data?.books.length === 0 && !loading && (
