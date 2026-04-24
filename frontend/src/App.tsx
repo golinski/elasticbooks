@@ -106,26 +106,83 @@ function formatPopularity(n: number): string {
   return String(n);
 }
 
-// ─── Cloudinary responsive URL ────────────────────────────────────────────────
-// Preset width buckets (px). We pick the smallest one that is >= the requested
-// size so we never upscale, while keeping the number of cached variants small.
+// ─── Cloudinary responsive helpers ───────────────────────────────────────────
+// Width buckets served as separate <source> elements inside a <picture>.
+// Heights are derived from the 2:3 portrait ratio.
 const CL_WIDTH_BUCKETS = [120, 160, 200, 273, 360, 480, 640, 800] as const;
-// Books are portrait ~2:3; derive height from width.
+type ClBucket = (typeof CL_WIDTH_BUCKETS)[number];
 const COVER_RATIO = 3 / 2;
 
-function cloudinaryResize(url: string, widthPx: number): string {
-  // Only transform Cloudinary URLs (leave other CDNs / data URIs untouched).
+function clUrl(url: string, w: ClBucket): string {
   if (!url.includes("res.cloudinary.com")) return url;
+  const h = Math.round(w * COVER_RATIO);
+  return url.replace(/\/upload\//, `/upload/c_fit,w_${w},h_${h}/`) + ".avif";
+}
 
-  const bucket = CL_WIDTH_BUCKETS.find((b) => b >= widthPx) ?? CL_WIDTH_BUCKETS[CL_WIDTH_BUCKETS.length - 1];
-  const h = Math.round(bucket * COVER_RATIO);
-  const transform = `c_fit,w_${bucket},h_${h}`;
+interface CoverPictureProps {
+  url: string;
+  alt: string;
+  // Sizes attribute forwarded to <img> so the browser picks the right source.
+  // Defaults to "100vw" if omitted.
+  sizes?: string;
+  className?: string;
+  onError?: () => void;
+  onClick?: React.MouseEventHandler<HTMLImageElement>;
+  style?: React.CSSProperties;
+  loading?: "lazy" | "eager";
+}
 
-  // Insert transformation segment right before the version+path part.
-  // Cloudinary URLs look like:
-  //   https://res.cloudinary.com/<cloud>/image/upload/v1/<path>
-  // We insert after /upload/.
-  return url.replace(/\/upload\//, `/upload/${transform}/`) + ".avif";
+/** Renders a <picture> with one <source> per Cloudinary width bucket. */
+function CoverPicture({
+  url,
+  alt,
+  sizes = "100vw",
+  className,
+  onError,
+  onClick,
+  style,
+  loading = "lazy",
+}: CoverPictureProps) {
+  const isCloudinary = url.includes("res.cloudinary.com");
+
+  if (!isCloudinary) {
+    return (
+      <img
+        src={url}
+        alt={alt}
+        sizes={sizes}
+        className={className}
+        onError={onError}
+        onClick={onClick}
+        style={style}
+        loading={loading}
+      />
+    );
+  }
+
+  // Build a srcSet string covering all buckets — the browser will pick based
+  // on the rendered width reported by `sizes`.
+  const srcSet = CL_WIDTH_BUCKETS
+    .map((w) => `${clUrl(url, w)} ${w}w`)
+    .join(", ");
+
+  // Fallback src: smallest bucket (good for old browsers / bots).
+  const fallbackSrc = clUrl(url, CL_WIDTH_BUCKETS[0]);
+
+  return (
+    <picture>
+      <source srcSet={srcSet} sizes={sizes} type="image/avif" />
+      <img
+        src={fallbackSrc}
+        alt={alt}
+        className={className}
+        onError={onError}
+        onClick={onClick}
+        style={style}
+        loading={loading}
+      />
+    </picture>
+  );
 }
 
 // ─── BookCard ─────────────────────────────────────────────────────────────────
@@ -138,19 +195,7 @@ interface BookCardProps {
 
 function BookCard({ book, onClick, sortMode }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  // Measure the rendered card width once on mount so we can request the
-  // right Cloudinary size. Falls back to the CSS variable default (160 px).
-  const [cardWidth, setCardWidth] = useState(160);
-  useEffect(() => {
-    if (wrapRef.current) {
-      setCardWidth(wrapRef.current.offsetWidth);
-    }
-  }, []);
-
-  const rawUrl = !imgErr && book.cover_url ? book.cover_url : null;
-  const src = rawUrl ? cloudinaryResize(rawUrl, cardWidth * window.devicePixelRatio) : PLACEHOLDER;
+  const coverUrl = !imgErr && book.cover_url ? book.cover_url : null;
 
   let badge: React.ReactNode = null;
   if (sortMode === "score" && book._score != null) {
@@ -175,12 +220,13 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
 
   return (
     <div className="book-card" onClick={() => onClick(book)}>
-      <div className="cover-wrap" ref={wrapRef}>
-        <img
-          src={src}
+      <div className="cover-wrap">
+        <CoverPicture
+          url={coverUrl ?? PLACEHOLDER}
           alt={book.title ?? "Unknown"}
-          loading="lazy"
+          sizes="(max-width:600px) 130px, 160px"
           onError={() => setImgErr(true)}
+          loading="lazy"
         />
         {book.volume != null && (
           <span className="vol-badge">#{book.volume}</span>
@@ -244,10 +290,7 @@ interface ModalProps {
 function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
   const [imgErr, setImgErr] = useState(false);
   const [lightbox, setLightbox] = useState(false);
-  // Modal cover is ~180 px wide; request 360 px to look sharp on 2x screens.
-  const modalSrc = !imgErr && book.cover_url
-    ? cloudinaryResize(book.cover_url, 360)
-    : PLACEHOLDER;
+  const modalCoverUrl = !imgErr && book.cover_url ? book.cover_url : null;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -262,9 +305,10 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
         <button className="modal-close" onClick={onClose}>✕</button>
         <div className="modal-body">
           <div className="modal-cover">
-            <img
-              src={modalSrc}
+            <CoverPicture
+              url={modalCoverUrl ?? PLACEHOLDER}
               alt={book.title ?? "Cover"}
+              sizes="180px"
               onError={() => setImgErr(true)}
               onClick={() => { if (book.cover_url) setLightbox(true); }}
               style={{ cursor: book.cover_url ? "zoom-in" : "default" }}
