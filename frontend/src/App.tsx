@@ -106,6 +106,28 @@ function formatPopularity(n: number): string {
   return String(n);
 }
 
+// ─── Cloudinary responsive URL ────────────────────────────────────────────────
+// Preset width buckets (px). We pick the smallest one that is >= the requested
+// size so we never upscale, while keeping the number of cached variants small.
+const CL_WIDTH_BUCKETS = [120, 160, 200, 273, 360, 480, 640, 800] as const;
+// Books are portrait ~2:3; derive height from width.
+const COVER_RATIO = 3 / 2;
+
+function cloudinaryResize(url: string, widthPx: number): string {
+  // Only transform Cloudinary URLs (leave other CDNs / data URIs untouched).
+  if (!url.includes("res.cloudinary.com")) return url;
+
+  const bucket = CL_WIDTH_BUCKETS.find((b) => b >= widthPx) ?? CL_WIDTH_BUCKETS[CL_WIDTH_BUCKETS.length - 1];
+  const h = Math.round(bucket * COVER_RATIO);
+  const transform = `c_fit,w_${bucket},h_${h}`;
+
+  // Insert transformation segment right before the version+path part.
+  // Cloudinary URLs look like:
+  //   https://res.cloudinary.com/<cloud>/image/upload/v1/<path>
+  // We insert after /upload/.
+  return url.replace(/\/upload\//, `/upload/${transform}/`) + ".avif";
+}
+
 // ─── BookCard ─────────────────────────────────────────────────────────────────
 
 interface BookCardProps {
@@ -114,12 +136,21 @@ interface BookCardProps {
   sortMode: SortField;
 }
 
-const cloudinarySmall = (url: string, w: number = 273, h: number = 410, format: string = "avif") => 
-  url.replace("http://", "https://").replace("/upload/", `/upload/c_fit,w_${w},h_${h}/`).replace(/$/,`.${format}`);
-
 function BookCard({ book, onClick, sortMode }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
-  const src = !imgErr && book.cover_url ? book.cover_url : PLACEHOLDER;
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Measure the rendered card width once on mount so we can request the
+  // right Cloudinary size. Falls back to the CSS variable default (160 px).
+  const [cardWidth, setCardWidth] = useState(160);
+  useEffect(() => {
+    if (wrapRef.current) {
+      setCardWidth(wrapRef.current.offsetWidth);
+    }
+  }, []);
+
+  const rawUrl = !imgErr && book.cover_url ? book.cover_url : null;
+  const src = rawUrl ? cloudinaryResize(rawUrl, cardWidth * window.devicePixelRatio) : PLACEHOLDER;
 
   let badge: React.ReactNode = null;
   if (sortMode === "score" && book._score != null) {
@@ -144,9 +175,9 @@ function BookCard({ book, onClick, sortMode }: BookCardProps) {
 
   return (
     <div className="book-card" onClick={() => onClick(book)}>
-      <div className="cover-wrap">
+      <div className="cover-wrap" ref={wrapRef}>
         <img
-          src={cloudinarySmall(src)}
+          src={src}
           alt={book.title ?? "Unknown"}
           loading="lazy"
           onError={() => setImgErr(true)}
@@ -213,7 +244,10 @@ interface ModalProps {
 function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
   const [imgErr, setImgErr] = useState(false);
   const [lightbox, setLightbox] = useState(false);
-  const src = !imgErr && book.cover_url ? book.cover_url : PLACEHOLDER;
+  // Modal cover is ~180 px wide; request 360 px to look sharp on 2x screens.
+  const modalSrc = !imgErr && book.cover_url
+    ? cloudinaryResize(book.cover_url, 360)
+    : PLACEHOLDER;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -229,7 +263,7 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
         <div className="modal-body">
           <div className="modal-cover">
             <img
-              src={cloudinarySmall(src)}
+              src={modalSrc}
               alt={book.title ?? "Cover"}
               onError={() => setImgErr(true)}
               onClick={() => { if (book.cover_url) setLightbox(true); }}
@@ -1045,7 +1079,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .cover-wrap img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
 }
 .vol-badge {
