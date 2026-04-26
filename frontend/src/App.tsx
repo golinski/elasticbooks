@@ -978,7 +978,7 @@ export default function App() {
                   const raw = params.sort === "author"
                     ? (b.authors?.[0] ?? "")
                     : (b.title ?? "");
-                  const first = raw.trim().toUpperCase()[0];
+                  const first = String(raw).trim().toUpperCase()[0];
                   return /[A-Z]/.test(first) ? first : "#";
                 })))
               : [];
@@ -996,7 +996,7 @@ export default function App() {
                   const raw = params.sort === "author"
                     ? (book.authors?.[0] ?? "")
                     : (book.title ?? "");
-                  const first = raw.trim().toUpperCase()[0];
+                  const first = String(raw).trim().toUpperCase()[0];
                   const letter = /[A-Z]/.test(first) ? first : "#";
                   return (
                     <BookCard
