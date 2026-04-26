@@ -337,7 +337,7 @@ function getGroupKey(book: Book, sortMode: "author" | "series"): string {
   if (sortMode === "author") {
     return (book.authors?.[0] ?? "—").trim();
   }
-  return (book.series ?? "—").trim();
+  return String(book.series ?? "—").trim();
 }
 
 function GroupedGrid({ books, sortMode, sidebarOpen, onBookClick }: GroupedGridProps) {
