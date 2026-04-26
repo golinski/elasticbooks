@@ -5,6 +5,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
+
 import { fetchBooks, fetchStats } from "./api";
 import type {
   Book,
@@ -28,6 +29,8 @@ const DEFAULT_PARAMS: SearchParams = {
 
 function parseQS(): SearchParams {
   const p = new URLSearchParams(window.location.search);
+  const hasQ = !!p.get("q");
+  const explicitSort = p.get("sort") as SortField | null;
   return {
     q:         p.get("q")         ?? "",
     title:     p.get("title")     ?? "",
@@ -43,8 +46,8 @@ function parseQS(): SearchParams {
     keyword_filter:   p.getAll("keyword_filter"),
     year_from: p.get("year_from") ?? "",
     year_to:   p.get("year_to")   ?? "",
-    sort:      (p.get("sort")  as SortField) ?? "title",
-    dir:       (p.get("dir")   as "asc" | "desc") ?? "asc",
+    sort:      explicitSort ?? (hasQ ? "score" : "title"),
+    dir:       (p.get("dir") as "asc" | "desc") ?? (hasQ && !explicitSort ? "desc" : "asc"),
     page:      parseInt(p.get("page") ?? "1", 10),
     size:      parseInt(p.get("size") ?? "40", 10),
   };
@@ -247,36 +250,29 @@ interface BookCardProps {
   onClick: (book: Book) => void;
   sortMode: SortField;
   sidebarOpen: boolean;
+  dataLetter?: string;
 }
 
-function BookCard({ book, onClick, sortMode, sidebarOpen }: BookCardProps) {
+function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCardProps) {
   const [imgErr, setImgErr] = useState(false);
   const coverUrl = !imgErr && book.cover_url ? book.cover_url : null;
   const sizes = useGridItemSizes(sidebarOpen);
 
-  let badge: React.ReactNode = null;
-  if (sortMode === "score" && book._score != null) {
-    badge = (
-      <span className="rating-badge score-badge" title={`Relevance score: ${book._score}`}>
-        ★{book._score.toFixed(2)}
-      </span>
-    );
-  } else if (sortMode === "popularity" && book.ratingNum != null) {
-    badge = (
-      <span className="rating-badge popularity-badge" title={`${book.ratingNum.toLocaleString()} ratings`}>
-        ♥{formatPopularity(book.ratingNum)}
-      </span>
-    );
-  } else if (book.rating != null) {
-    badge = (
-      <span className="rating-badge" title={`Rating: ${(book.rating / 10).toFixed(1)}`}>
-        {(book.rating / 10).toFixed(1)}
-      </span>
-    );
-  }
+  // Bottom-left badges: score (when searching) + ratingNum — always visible
+  const scoreNode = sortMode === "score" && book._score != null
+    ? <span className="rating-badge score-badge" title={`Relevance: ${book._score.toFixed(2)}`}>★{book._score.toFixed(1)}</span>
+    : null;
+
+  const ratingNumNode = book.ratingNum != null
+    ? <span className="rating-badge popularity-badge" title={`${book.ratingNum.toLocaleString()} ratings`}>♥{formatPopularity(book.ratingNum)}</span>
+    : null;
+
+  const ratingNode = book.rating != null
+    ? <span className="rating-badge" title={`Rating: ${(book.rating / 10).toFixed(1)}`}>{(book.rating / 10).toFixed(1)}</span>
+    : null;
 
   return (
-    <div className="book-card" onClick={() => onClick(book)}>
+    <div className="book-card" data-letter={dataLetter} onClick={() => onClick(book)}>
       <div className="cover-wrap">
         <CoverPicture
           url={coverUrl ?? PLACEHOLDER}
@@ -288,7 +284,11 @@ function BookCard({ book, onClick, sortMode, sidebarOpen }: BookCardProps) {
         {book.volume != null && (
           <span className="vol-badge">#{book.volume}</span>
         )}
-        {badge}
+        <div className="card-badges">
+          {scoreNode}
+          {ratingNode}
+          {ratingNumNode}
+        </div>
       </div>
       <div className="card-title">{book.title}</div>
       <div className="card-author">
@@ -298,7 +298,86 @@ function BookCard({ book, onClick, sortMode, sidebarOpen }: BookCardProps) {
   );
 }
 
-// ─── FacetSection ─────────────────────────────────────────────────────────────
+// ─── LetterIndex ──────────────────────────────────────────────────────────────
+
+interface LetterIndexProps {
+  letters: string[];
+  onJump: (letter: string) => void;
+}
+
+function LetterIndex({ letters, onJump }: LetterIndexProps) {
+  const all = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".split("");
+  return (
+    <nav className="letter-index" aria-label="Alphabetical index">
+      {all.map((l) => (
+        <button
+          key={l}
+          className={`letter-btn ${letters.includes(l) ? "letter-active" : "letter-inactive"}`}
+          disabled={!letters.includes(l)}
+          onClick={() => onJump(l)}
+          title={l}
+        >
+          {l}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// ─── GroupedGrid ──────────────────────────────────────────────────────────────
+
+interface GroupedGridProps {
+  books: Book[];
+  sortMode: "author" | "series";
+  sidebarOpen: boolean;
+  onBookClick: (book: Book) => void;
+}
+
+function getGroupKey(book: Book, sortMode: "author" | "series"): string {
+  if (sortMode === "author") {
+    return (book.authors?.[0] ?? "—").trim();
+  }
+  return (book.series ?? "—").trim();
+}
+
+function GroupedGrid({ books, sortMode, sidebarOpen, onBookClick }: GroupedGridProps) {
+  // Group books preserving server order (already sorted correctly)
+  const groups: Array<{ label: string; books: Book[] }> = [];
+  const seen = new Map<string, number>();
+
+  for (const book of books) {
+    const key = getGroupKey(book, sortMode);
+    if (seen.has(key)) {
+      groups[seen.get(key)!].books.push(book);
+    } else {
+      seen.set(key, groups.length);
+      groups.push({ label: key, books: [book] });
+    }
+  }
+
+  return (
+    <div className="grouped-grid">
+      {groups.map((g) => (
+        <div key={g.label} className="group-section" data-group={g.label}>
+          <div className="group-label">{g.label}</div>
+          <div className="book-grid">
+            {g.books.map((book) => (
+              <BookCard
+                key={book.id}
+                book={book}
+                onClick={onBookClick}
+                sortMode={sortMode}
+                sidebarOpen={sidebarOpen}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 
 interface FacetSectionProps {
   title: string;
@@ -640,7 +719,20 @@ export default function App() {
   }, []);
 
   const update = useCallback((patch: Partial<SearchParams>) => {
-    setParams((p) => ({ ...p, ...patch, page: 1 }));
+    setParams((p) => {
+      const next = { ...p, ...patch, page: 1 };
+      // Auto-switch sort: entering a free-text query → relevance; clearing it → title
+      if ("q" in patch) {
+        if (patch.q && (p.sort === "title" || p.sort === "author" || p.sort === "series")) {
+          next.sort = "score";
+          next.dir = "desc";
+        } else if (!patch.q && p.sort === "score") {
+          next.sort = "title";
+          next.dir = "asc";
+        }
+      }
+      return next;
+    });
   }, []);
 
   const toggleFacet = useCallback((key: FacetFilterKey, value: string) => {
@@ -873,23 +965,79 @@ export default function App() {
 
           {error && <div className="error-msg">Error: {error}</div>}
 
-          {/* Grid */}
-          {!error && (
-            <div className={`book-grid ${loading ? "grid-loading" : ""}`}>
-              {data?.books.map((book) => (
-                <BookCard
-                  key={book.id}
-                  book={book}
-                  onClick={setSelected}
-                  sortMode={params.sort}
-                  sidebarOpen={sidebarOpen}
-                />
-              ))}
-              {data?.books.length === 0 && !loading && (
-                <div className="empty">No books found.</div>
-              )}
-            </div>
-          )}
+          {/* Grid / Grouped view */}
+          {!error && (() => {
+            const books = data?.books ?? [];
+            const isGrouped = (params.sort === "author" || params.sort === "series") && !params.q;
+            const totalPages = data ? Math.ceil(data.total / params.size) : 0;
+            const showLetterIndex = (params.sort === "title" || params.sort === "author") && totalPages > 1 && !params.q;
+
+            // Compute which letters are present in current page for the index
+            const presentLetters = showLetterIndex
+              ? Array.from(new Set(books.map((b) => {
+                  const raw = params.sort === "author"
+                    ? (b.authors?.[0] ?? "")
+                    : (b.title ?? "");
+                  const first = raw.trim().toUpperCase()[0];
+                  return /[A-Z]/.test(first) ? first : "#";
+                })))
+              : [];
+
+            const handleLetterJump = (letter: string) => {
+              const selector = `[data-letter="${letter}"]`;
+              const el = document.querySelector<HTMLElement>(selector);
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            };
+
+            // For letter-indexed flat grid, attach data-letter to cards via wrapper
+            const flatGrid = (
+              <div className={`book-grid ${loading ? "grid-loading" : ""}`}>
+                {books.map((book) => {
+                  const raw = params.sort === "author"
+                    ? (book.authors?.[0] ?? "")
+                    : (book.title ?? "");
+                  const first = raw.trim().toUpperCase()[0];
+                  const letter = /[A-Z]/.test(first) ? first : "#";
+                  return (
+                    <BookCard
+                      key={book.id}
+                      book={book}
+                      onClick={setSelected}
+                      sortMode={params.sort}
+                      sidebarOpen={sidebarOpen}
+                      dataLetter={showLetterIndex ? letter : undefined}
+                    />
+                  );
+                })}
+                {books.length === 0 && !loading && (
+                  <div className="empty">No books found.</div>
+                )}
+              </div>
+            );
+
+            return (
+              <div className={`content-with-index ${showLetterIndex ? "has-index" : ""}`}>
+                <div className={`content-area ${loading && isGrouped ? "grid-loading" : ""}`}>
+                  {isGrouped ? (
+                    <div className={loading ? "grid-loading" : ""}>
+                      <GroupedGrid
+                        books={books}
+                        sortMode={params.sort as "author" | "series"}
+                        sidebarOpen={sidebarOpen}
+                        onBookClick={setSelected}
+                      />
+                      {books.length === 0 && !loading && (
+                        <div className="empty">No books found.</div>
+                      )}
+                    </div>
+                  ) : flatGrid}
+                </div>
+                {showLetterIndex && (
+                  <LetterIndex letters={presentLetters} onJump={handleLetterJump} />
+                )}
+              </div>
+            );
+          })()}
 
           {data && (
             <Pagination
@@ -1207,6 +1355,21 @@ input[type="checkbox"] { accent-color: var(--accent); }
 }
 .score-badge { color: #7ecfff; }
 .popularity-badge { color: #ff8fa3; }
+.card-badges {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0 5px;
+  justify-content: flex-end;
+}
+.card-badges .rating-badge {
+  position: static;
+  flex-shrink: 0;
+}
 .card-title {
   padding: 7px 8px 2px;
   font-size: .82rem;
@@ -1323,10 +1486,65 @@ input[type="checkbox"] { accent-color: var(--accent); }
   box-shadow: 0 0 60px rgba(0,0,0,.8);
 }
 
+/* Letter index */
+.content-with-index {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+}
+.content-area { flex: 1; min-width: 0; }
+.letter-index {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  position: sticky;
+  top: 60px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 4px 2px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.letter-btn {
+  font-size: .65rem;
+  font-weight: bold;
+  width: 20px;
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+.letter-active {
+  color: var(--accent);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.letter-active:hover { border-color: var(--accent); background: var(--bg2); }
+.letter-inactive { color: var(--text3); cursor: default; opacity: .35; }
+
+/* Grouped grid */
+.grouped-grid { display: flex; flex-direction: column; gap: 24px; }
+.group-section {}
+.group-label {
+  font-size: .8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+
 @media (max-width: 600px) {
   .sidebar { width: 180px; min-width: 180px; }
   .modal-body { flex-direction: column; }
   .modal-cover { width: 120px; }
   :root { --card-w: 130px; }
+  .letter-index { display: none; }
 }
 `;
