@@ -283,3 +283,26 @@ app.get("/api/stats", async (_req: Request, res: Response<StatsResponse>) => {
 app.listen(PORT, () => {
   console.log(`Backend running on :${PORT}`);
 });
+
+// ─── ES startup probe ─────────────────────────────────────────────────────────
+// Elasticsearch can take a while to become ready even after the port opens.
+// We ping in a loop so the process doesn't crash on the first failed request.
+
+const ES_PING_INTERVAL_MS = 3000;
+const ES_PING_MAX_ATTEMPTS = 40; // ~2 minutes
+
+async function waitForElasticsearch(): Promise<void> {
+  for (let attempt = 1; attempt <= ES_PING_MAX_ATTEMPTS; attempt++) {
+    try {
+      await client.ping();
+      console.log(`Elasticsearch ready (attempt ${attempt})`);
+      return;
+    } catch {
+      console.log(`Waiting for Elasticsearch… (attempt ${attempt}/${ES_PING_MAX_ATTEMPTS})`);
+      await new Promise((r) => setTimeout(r, ES_PING_INTERVAL_MS));
+    }
+  }
+  console.error("Elasticsearch did not become ready in time — requests will fail until it does.");
+}
+
+waitForElasticsearch();
