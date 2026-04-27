@@ -525,6 +525,11 @@ func newRouter() http.Handler {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 func main() {
+	if os.Getenv("IMPORT") == "1" {
+		runImport()
+		return
+	}
+
 	go waitForES()
 
 	addr := ":" + port

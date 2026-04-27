@@ -49,12 +49,12 @@ services:
       - localfe
 
   importer:
-    build: ./backend
-    command: ["node", "dist/import.js"]
+    build: ./backend-go
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - TELLICO_FILE=/data/collection.tc
       - COVERS_JSON=/data/covers.json
+      - IMPORT=1
     volumes:
       - ./data:/data:ro
     depends_on:
