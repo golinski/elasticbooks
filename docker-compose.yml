@@ -20,10 +20,8 @@ services:
       - bookshelf
 
   backend:
-    build: ./backend
+    build: ./backend-go
     init: true
-    volumes:
-      - ./data:/data:ro
     ports:
       - "3001:3001"
     environment:
