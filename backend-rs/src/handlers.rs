@@ -14,7 +14,7 @@ use axum::{
 };
 use reqwest::Method;
 use serde_json::{json, Value};
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
     es::{es_json, INDEX},
@@ -79,6 +79,12 @@ pub async fn handle_books(
     let sort_dir = get_one(&params, "dir");
     let sort_dir = if sort_dir.is_empty() { "asc" } else { sort_dir };
 
+    debug!(
+        raw_query = raw_query.as_deref().unwrap_or(""),
+        page, size, from, sort_by, sort_dir,
+        "→ GET /api/books"
+    );
+
     let body = json!({
         "from": from,
         "size": size,
@@ -117,6 +123,7 @@ pub async fn handle_books(
         .unwrap_or_default();
 
     let aggs = &es_resp["aggregations"];
+    debug!(total, returned = books.len(), "← /api/books");
 
     Ok(Json(json!({
         "total": total,
@@ -141,6 +148,7 @@ pub async fn handle_book_by_id(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
+    debug!(id, "→ GET /api/books/:id");
     let url = format!("{}/{}/_doc/{}", state.config.es_url, INDEX, id);
     let (status, body) = es_json(&state.client, Method::GET, &url, None).await?;
     if status == 404 {
@@ -157,6 +165,7 @@ pub async fn handle_book_by_id(
 // ─── GET /api/stats ───────────────────────────────────────────────────────────
 
 pub async fn handle_stats(State(state): State<AppState>) -> Result<impl IntoResponse> {
+    debug!("→ GET /api/stats");
     let body = json!({
         "size": 0,
         "aggs": {

@@ -34,10 +34,18 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
-    // Initialise structured logging. The RUST_LOG env var controls verbosity.
-    // Default: "info" — shows startup messages and per-request errors.
-    // Set RUST_LOG=debug for verbose output including all ES queries.
+    // If DEBUG is set, force RUST_LOG=debug regardless of what it was before.
+    // This makes `DEBUG=1 ./bookshelf` produce verbose output without needing
+    // to know about RUST_LOG.
+    if std::env::var("DEBUG").is_ok_and(|v| !v.is_empty()) {
+        // Only override if not already set to something more specific.
+        if std::env::var("RUST_LOG").is_err() {
+            std::env::set_var("RUST_LOG", "debug");
+        }
+    }
+
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
         )

@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     config::Config,
@@ -362,9 +362,19 @@ pub async fn run_import(config: &Config) -> Result<()> {
     for chunk in entries.chunks(BATCH_SIZE) {
         let docs: Vec<BookDoc> = chunk
             .iter()
-            .map(|e| parse_entry_ref(e, &covers))
+            .map(|e| {
+                let doc = parse_entry_ref(e, &covers);
+                debug!(
+                    id = doc.id,
+                    title = ?doc.title,
+                    authors = ?doc.authors,
+                    "parsed entry"
+                );
+                doc
+            })
             .collect();
 
+        debug!(batch_docs = docs.len(), "bulk sending batch");
         bulk_index(&client, &config.es_url, &docs).await?;
         indexed += chunk.len();
         info!("Indexed {indexed}/{total}");

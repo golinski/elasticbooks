@@ -324,6 +324,7 @@ func esBulk(docs []bookDoc) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
+	debugLog("bulk POST /_bulk  payload_bytes=%d", buf.Len())
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -437,8 +438,10 @@ func runImport() {
 		docs := make([]bookDoc, len(batch))
 		for j, e := range batch {
 			docs[j] = parseEntry(e, covers)
+			debugLog("  entry id=%s title=%q authors=%v", e.ID, e.Title, []string(e.Authors))
 		}
 
+		debugLog("bulk sending %d docs (batch %d)", len(docs), i/batchSize+1)
 		if err := esBulk(docs); err != nil {
 			log.Fatalf("bulk indexing batch %d: %v", i/batchSize+1, err)
 		}

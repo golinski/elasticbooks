@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub const INDEX: &str = "books";
 
@@ -72,13 +72,22 @@ pub async fn es_json(
     url: &str,
     body: Option<&Value>,
 ) -> Result<(u16, Value)> {
-    let mut req = client.request(method, url);
+    let mut req = client.request(method.clone(), url);
     if let Some(b) = body {
+        debug!(method = %method, url, body = %b, "ES →");
         req = req.json(b);
+    } else {
+        debug!(method = %method, url, "ES →");
     }
     let resp = req.send().await.context("ES request failed")?;
     let status = resp.status().as_u16();
     let json: Value = resp.json().await.context("ES response not valid JSON")?;
+    // Truncate large responses in the log (e.g. full search results).
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        let s = json.to_string();
+        let preview = if s.len() > 2000 { &s[..2000] } else { &s };
+        debug!(status, body = preview, "ES ←");
+    }
     Ok((status, json))
 }
 
@@ -90,6 +99,7 @@ pub async fn es_raw(
     content_type: &str,
     body: Vec<u8>,
 ) -> Result<(u16, Value)> {
+    debug!(method = %method, url, content_type, payload_bytes = body.len(), "ES → (raw)");
     let resp = client
         .request(method, url)
         .header("Content-Type", content_type)
@@ -99,5 +109,6 @@ pub async fn es_raw(
         .context("ES raw request failed")?;
     let status = resp.status().as_u16();
     let json: Value = resp.json().await.context("ES response not valid JSON")?;
+    debug!(status, "ES ← (raw)");
     Ok((status, json))
 }

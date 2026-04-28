@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -40,27 +41,66 @@ func parseOrigins(s string) []string {
 	return out
 }
 
+// ─── Debug logging ────────────────────────────────────────────────────────────
+
+// debugMode is set once at startup from the DEBUG environment variable.
+// When true, debugLog writes timestamped lines to stderr.
+var debugMode = os.Getenv("DEBUG") != ""
+
+func debugLog(format string, args ...any) {
+	if debugMode {
+		fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
+	}
+}
+
 // ─── ES client (thin HTTP wrapper) ───────────────────────────────────────────
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 func esRequest(method, path string, body any) (*http.Response, error) {
 	var buf *bytes.Buffer
+	var bodyJSON string
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
+		bodyJSON = string(b)
 		buf = bytes.NewBuffer(b)
 	} else {
 		buf = &bytes.Buffer{}
 	}
+
+	debugLog("ES → %s %s%s  body=%s", method, esURL, path, bodyJSON)
+
 	req, err := http.NewRequest(method, esURL+path, buf)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return httpClient.Do(req)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		debugLog("ES ← error: %v", err)
+		return nil, err
+	}
+
+	if debugMode {
+		// Read the body, log it, then replace it with a fresh reader so the
+		// caller can still decode it normally.
+		raw, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(raw))
+		if readErr == nil {
+			// Truncate very large responses in the log.
+			logged := string(raw)
+			if len(logged) > 2000 {
+				logged = logged[:2000] + "…(truncated)"
+			}
+			debugLog("ES ← %d  body=%s", resp.StatusCode, logged)
+		}
+	}
+
+	return resp, nil
 }
 
 func esPing() error {
@@ -314,6 +354,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleBooks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	debugLog("→ GET /api/books  raw_query=%q", r.URL.RawQuery)
 
 	pageNum, _ := strconv.Atoi(firstOr(q.Get("page"), "1"))
 	sizeNum, _ := strconv.Atoi(firstOr(q.Get("size"), "40"))
@@ -327,6 +368,8 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 
 	sortBy := firstOr(q.Get("sort"), "title")
 	sortDir := firstOr(q.Get("dir"), "asc")
+
+	debugLog("  page=%d size=%d from=%d sort=%s dir=%s", pageNum, sizeNum, from, sortBy, sortDir)
 
 	body := M{
 		"from":  from,
@@ -374,6 +417,7 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aggs := esResp.Aggregations
+	debugLog("← /api/books  total=%d returned=%d", esResp.Hits.Total.Value, len(books))
 	writeJSON(w, http.StatusOK, M{
 		"total": esResp.Hits.Total.Value,
 		"page":  pageNum,
@@ -391,8 +435,8 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBookByID(w http.ResponseWriter, r *http.Request) {
-	// Path: /api/books/{id}
 	id := strings.TrimPrefix(r.URL.Path, "/api/books/")
+	debugLog("→ GET /api/books/%s", id)
 	if id == "" {
 		http.NotFound(w, r)
 		return
@@ -416,6 +460,7 @@ func handleBookByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
+	debugLog("→ GET /api/stats")
 	body := M{
 		"size": 0,
 		"aggs": M{
