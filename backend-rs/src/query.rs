@@ -30,32 +30,40 @@ pub fn parse_multi(raw: Option<&str>) -> MultiParams {
     map
 }
 
-/// Minimal percent-decoder for query string values.
-/// Handles `+` as space and `%XX` hex sequences.
+/// Percent-decoder for query string values.
+/// Handles `+` as space and `%XX` hex sequences, including multi-byte
+/// UTF-8 characters encoded as consecutive `%XX%XX...` sequences.
 fn percent_decode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    let src = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'+' {
-            out.push(' ');
+    while i < src.len() {
+        if src[i] == b'+' {
+            bytes.push(b' ');
             i += 1;
-        } else if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
-                if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                    out.push(byte as char);
-                    i += 3;
-                    continue;
-                }
+        } else if src[i] == b'%' && i + 2 < src.len() {
+            if let Some(byte) = decode_hex(src[i + 1], src[i + 2]) {
+                bytes.push(byte);
+                i += 3;
+            } else {
+                bytes.push(b'%');
+                i += 1;
             }
-            out.push('%');
-            i += 1;
         } else {
-            out.push(bytes[i] as char);
+            bytes.push(src[i]);
             i += 1;
         }
     }
-    out
+    // from_utf8_lossy handles the case where the bytes are valid UTF-8
+    // (the common case) with zero allocation; it only allocates if there
+    // are invalid sequences, replacing them with U+FFFD.
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn decode_hex(hi: u8, lo: u8) -> Option<u8> {
+    let h = (hi as char).to_digit(16)? as u8;
+    let l = (lo as char).to_digit(16)? as u8;
+    Some((h << 4) | l)
 }
 
 /// Convenience: get the first value for a key, or empty string.
