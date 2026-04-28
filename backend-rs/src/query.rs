@@ -1,0 +1,203 @@
+/// Elasticsearch query and sort builders.
+///
+/// All functions return `serde_json::Value` (the `json!` macro produces these).
+/// This mirrors the Go approach of using `map[string]any` — flexible but not
+/// type-checked at compile time. The trade-off is acceptable because the ES
+/// query DSL is inherently dynamic.
+use serde_json::{json, Value};
+use std::collections::HashMap;
+
+/// Multi-value query parameters arrive as repeated keys:
+///   ?author_filter=A&author_filter=B
+/// axum's `Query<HashMap<String,String>>` only keeps the last value, so we
+/// use a raw `axum::extract::RawQuery` and parse manually. This type alias
+/// makes the intent clear at the call site.
+pub type MultiParams = HashMap<String, Vec<String>>;
+
+/// Parse the raw query string into a map of key → list of values.
+pub fn parse_multi(raw: Option<&str>) -> MultiParams {
+    let mut map: MultiParams = HashMap::new();
+    let Some(qs) = raw else { return map };
+    for pair in qs.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode(k);
+        let val = percent_decode(v);
+        map.entry(key).or_default().push(val);
+    }
+    map
+}
+
+/// Minimal percent-decoder for query string values.
+/// Handles `+` as space and `%XX` hex sequences.
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'+' {
+            out.push(' ');
+            i += 1;
+        } else if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    out.push(byte as char);
+                    i += 3;
+                    continue;
+                }
+            }
+            out.push('%');
+            i += 1;
+        } else {
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Convenience: get the first value for a key, or empty string.
+pub fn get_one<'a>(params: &'a MultiParams, key: &str) -> &'a str {
+    params
+        .get(key)
+        .and_then(|v| v.first())
+        .map(String::as_str)
+        .unwrap_or("")
+}
+
+/// Build the ES `query` object from HTTP query parameters.
+pub fn build_filters(params: &MultiParams) -> Value {
+    let mut must: Vec<Value> = Vec::new();
+    let mut filters: Vec<Value> = Vec::new();
+
+    // ── Full-text search ──────────────────────────────────────────────────────
+    let q = get_one(params, "q");
+    if !q.is_empty() {
+        must.push(json!({
+            "multi_match": {
+                "query": q,
+                "fields": [
+                    "title^3", "titleOrig^2", "authors^2", "series^2",
+                    "comments", "genres", "keywords", "publisher", "translators"
+                ],
+                "type": "best_fields",
+                "fuzziness": "AUTO"
+            }
+        }));
+    }
+
+    // ── Field-specific prefix searches ────────────────────────────────────────
+    let field_map: &[(&str, &str)] = &[
+        ("title", "title"),
+        ("author", "authors"),
+        ("series", "series"),
+        ("genre", "genres"),
+        ("keyword", "keywords"),
+        ("publisher", "publisher"),
+        ("tag", "keywords"),
+    ];
+    for &(param, field) in field_map {
+        let v = get_one(params, param);
+        if !v.is_empty() {
+            must.push(json!({
+                "match_phrase_prefix": {
+                    field: { "query": v, "max_expansions": 50 }
+                }
+            }));
+        }
+    }
+
+    // ── Facet filters ─────────────────────────────────────────────────────────
+    let facet_map: &[(&str, &str)] = &[
+        ("author_filter", "authors.keyword"),
+        ("series_filter", "series.keyword"),
+        ("genre_filter", "genres.keyword"),
+        ("publisher_filter", "publisher.keyword"),
+        ("keyword_filter", "keywords.keyword"),
+    ];
+    for &(param, kw_field) in facet_map {
+        let vals = params.get(param).map(Vec::as_slice).unwrap_or(&[]);
+        if vals.is_empty() {
+            continue;
+        }
+        let clauses: Vec<Value> = vals
+            .iter()
+            .map(|v| json!({ "prefix": { kw_field: { "value": v } } }))
+            .collect();
+        if clauses.len() == 1 {
+            filters.push(clauses.into_iter().next().unwrap());
+        } else {
+            filters.push(json!({
+                "bool": { "should": clauses, "minimum_should_match": 1 }
+            }));
+        }
+    }
+
+    // ── Year exact filter ─────────────────────────────────────────────────────
+    let year_vals: Vec<i64> = params
+        .get("year_filter")
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|v| v.parse().ok())
+        .collect();
+    if !year_vals.is_empty() {
+        filters.push(json!({ "terms": { "pub_year": year_vals } }));
+    }
+
+    // ── Year range ────────────────────────────────────────────────────────────
+    let year_from = get_one(params, "year_from");
+    let year_to = get_one(params, "year_to");
+    if !year_from.is_empty() || !year_to.is_empty() {
+        let mut rng = serde_json::Map::new();
+        if let Ok(n) = year_from.parse::<i64>() {
+            rng.insert("gte".into(), json!(n));
+        }
+        if let Ok(n) = year_to.parse::<i64>() {
+            rng.insert("lte".into(), json!(n));
+        }
+        if !rng.is_empty() {
+            filters.push(json!({ "range": { "pub_year": rng } }));
+        }
+    }
+
+    // ── Assemble bool query ───────────────────────────────────────────────────
+    if must.is_empty() && filters.is_empty() {
+        return json!({ "match_all": {} });
+    }
+    let mut bool_clause = serde_json::Map::new();
+    if !must.is_empty() {
+        bool_clause.insert("must".into(), json!(must));
+    }
+    if !filters.is_empty() {
+        bool_clause.insert("filter".into(), json!(filters));
+    }
+    json!({ "bool": bool_clause })
+}
+
+/// Build the ES `sort` array from sort field and direction strings.
+pub fn build_sort(sort_by: &str, sort_dir: &str) -> Value {
+    let dir = if sort_dir == "desc" { "desc" } else { "asc" };
+    match sort_by {
+        "title" => json!([{ "title.keyword": { "order": dir } }]),
+        "author" => json!([{ "authors.keyword": { "order": dir } }]),
+        "pub_year" => json!([{ "pub_year": { "order": dir } }]),
+        "rating" => json!([{ "rating": { "order": dir, "missing": "_last" } }]),
+        "series" => json!([
+            { "series.keyword": { "order": dir, "missing": "_last" } },
+            { "volume": { "order": "asc", "missing": "_last" } }
+        ]),
+        "cdate" => json!([{ "cdate": { "order": dir } }]),
+        "score" => json!([
+            { "_score": { "order": dir } },
+            { "title.keyword": { "order": "asc" } }
+        ]),
+        "popularity" => json!([{ "ratingNum": { "order": dir, "missing": "_last" } }]),
+        _ => json!([
+            { "_score": { "order": "desc" } },
+            { "title.keyword": { "order": "asc" } }
+        ]),
+    }
+}

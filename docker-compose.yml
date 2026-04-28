@@ -18,8 +18,7 @@ services:
       start_period: 30s
     networks:
       - bookshelf
-
-  backend:
+  backend-go:
     build: ./backend-go
     init: true
     ports:
@@ -27,6 +26,21 @@ services:
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - PORT=3001
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - bookshelf
+    restart: unless-stopped
+
+  backend-rs:
+    build: ./backend-rs
+    init: true
+    ports:
+      - "3002:3002"
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - PORT=3002
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -50,6 +64,23 @@ services:
 
   importer:
     build: ./backend-go
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - TELLICO_FILE=/data/collection.tc
+      - COVERS_JSON=/data/covers.json
+      - IMPORT=1
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - bookshelf
+    profiles:
+      - import
+      
+  importer-rs:
+    build: ./backend-rs
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - TELLICO_FILE=/data/collection.tc
