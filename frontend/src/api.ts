@@ -1,6 +1,9 @@
 import type { BooksResponse, StatsResponse, SearchParams } from "./types";
 
-export async function fetchBooks(params: SearchParams): Promise<BooksResponse> {
+export async function fetchBooks(
+  params: SearchParams,
+  extra?: Record<string, string>,
+): Promise<BooksResponse> {
   const qs = new URLSearchParams();
   (Object.entries(params) as [string, unknown][]).forEach(([k, v]) => {
     if (Array.isArray(v)) {
@@ -9,6 +12,9 @@ export async function fetchBooks(params: SearchParams): Promise<BooksResponse> {
       qs.set(k, String(v));
     }
   });
+  if (extra) {
+    Object.entries(extra).forEach(([k, v]) => { if (v) qs.set(k, v); });
+  }
   const r = await fetch(`/api/books?${qs}`);
   if (!r.ok) throw new Error("API error");
   return r.json() as Promise<BooksResponse>;
