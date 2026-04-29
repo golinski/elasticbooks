@@ -27,6 +27,7 @@ const DEFAULT_PARAMS: SearchParams = {
   rating_from: "", rating_to: "",
   rating_num_from: "", rating_num_to: "",
   cdate_from: "", cdate_to: "",
+  hist_buckets: 30,
   sort: "title", dir: "asc", page: 1, size: 40,
 };
 
@@ -55,6 +56,7 @@ function parseQS(): SearchParams {
     rating_num_to:   p.get("rating_num_to")   ?? "",
     cdate_from:      p.get("cdate_from")      ?? "",
     cdate_to:        p.get("cdate_to")        ?? "",
+    hist_buckets:    parseInt(p.get("hist_buckets") ?? "30", 10),
     sort:      explicitSort ?? (hasQ ? "score" : "title"),
     dir:       (p.get("dir") as "asc" | "desc") ?? (hasQ && !explicitSort ? "desc" : "asc"),
     page:      parseInt(p.get("page") ?? "1", 10),
@@ -85,6 +87,7 @@ function toQS(s: SearchParams): string {
   set("rating_num_to",   s.rating_num_to);
   set("cdate_from",      s.cdate_from);
   set("cdate_to",        s.cdate_to);
+  if (s.hist_buckets !== 30) p.set("hist_buckets", String(s.hist_buckets));
   if (s.sort !== "title") p.set("sort", s.sort);
   if (s.dir  !== "asc")   p.set("dir",  s.dir);
   if (s.page > 1)         p.set("page", String(s.page));
@@ -396,6 +399,8 @@ function GroupedGrid({ books, sortMode, sidebarOpen, onBookClick }: GroupedGridP
 
 interface HistBucket { key: number; doc_count: number; }
 
+type HistScale = "linear" | "log" | "sqrt";
+
 interface RangeHistogramProps {
   title: string;
   buckets: HistBucket[];
@@ -404,12 +409,46 @@ interface RangeHistogramProps {
   /** Convert a raw ES bucket key to the display scale */
   keyToDisplay: (k: number) => number;
   formatLabel: (v: number) => string;
+  /** Called only on pointer-up / input blur — not on every drag move */
   onChange: (from: string, to: string) => void;
+}
+
+// Map a display value through a scale transform for positioning on the axis.
+// All transforms are normalised to [0,1] given [min,max].
+function scalePos(v: number, min: number, max: number, scale: HistScale): number {
+  const span = max - min || 1;
+  const t = (v - min) / span;
+  if (scale === "log") {
+    // log(1+t*span) / log(1+span) — maps [0,span] → [0,1] with log compression
+    const logMax = Math.log(1 + span);
+    return Math.log(1 + (v - min)) / (logMax || 1);
+  }
+  if (scale === "sqrt") return Math.sqrt(Math.max(0, t));
+  return t;
+}
+
+function invScalePos(p: number, min: number, max: number, scale: HistScale): number {
+  const span = max - min || 1;
+  const clamped = Math.max(0, Math.min(1, p));
+  if (scale === "log") {
+    const logMax = Math.log(1 + span);
+    return min + (Math.exp(clamped * logMax) - 1);
+  }
+  if (scale === "sqrt") return min + (clamped * clamped) * span;
+  return min + clamped * span;
 }
 
 function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, onChange }: RangeHistogramProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  // Local state for the drag — only committed to params on pointer-up
+  const [localFrom, setLocalFrom] = useState(from);
+  const [localTo,   setLocalTo]   = useState(to);
   const dragging = useRef<"from" | "to" | null>(null);
+  const [scale, setScale] = useState<HistScale>("linear");
+
+  // Keep local state in sync when external params change (e.g. URL navigation)
+  useEffect(() => { setLocalFrom(from); }, [from]);
+  useEffect(() => { setLocalTo(to);     }, [to]);
 
   if (!buckets || buckets.length === 0) return null;
 
@@ -418,16 +457,16 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
   const maxVal = displayBuckets[displayBuckets.length - 1].display;
   const maxCount = Math.max(...displayBuckets.map((b) => b.count), 1);
 
-  const fromNum = from !== "" ? parseFloat(from) : minVal;
-  const toNum   = to   !== "" ? parseFloat(to)   : maxVal;
+  const fromNum = localFrom !== "" ? parseFloat(localFrom) : minVal;
+  const toNum   = localTo   !== "" ? parseFloat(localTo)   : maxVal;
 
   const W = 188, H = 52, PAD = 8, TRACK_Y = H - 10;
   const innerW = W - PAD * 2;
 
-  const valToX = (v: number) => PAD + ((v - minVal) / (maxVal - minVal || 1)) * innerW;
+  const valToX = (v: number) => PAD + scalePos(v, minVal, maxVal, scale) * innerW;
   const xToVal = (x: number) => {
-    const raw = minVal + ((x - PAD) / innerW) * (maxVal - minVal);
-    return Math.max(minVal, Math.min(maxVal, raw));
+    const p = (x - PAD) / innerW;
+    return invScalePos(p, minVal, maxVal, scale);
   };
 
   const startDrag = (handle: "from" | "to") => (e: React.PointerEvent) => {
@@ -440,8 +479,15 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
     const rect = svgRef.current.getBoundingClientRect();
     const v = xToVal(e.clientX - rect.left);
     const r = Math.round(v * 10) / 10;
-    if (dragging.current === "from") onChange(String(Math.min(r, toNum)), to);
-    else onChange(from, String(Math.max(r, fromNum)));
+    if (dragging.current === "from") setLocalFrom(String(Math.min(r, toNum)));
+    else                             setLocalTo(String(Math.max(r, fromNum)));
+  };
+
+  const commitDrag = () => {
+    if (dragging.current) {
+      dragging.current = null;
+      onChange(localFrom, localTo);
+    }
   };
 
   const fromX = valToX(fromNum);
@@ -450,11 +496,23 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
 
   return (
     <div className="facet-section hist-section">
-      <div className="facet-title">{title}</div>
+      <div className="hist-header">
+        <span className="facet-title">{title}</span>
+        <select
+          className="hist-scale-select"
+          value={scale}
+          onChange={(e) => setScale(e.target.value as HistScale)}
+          title="Axis scale"
+        >
+          <option value="linear">linear</option>
+          <option value="log">log</option>
+          <option value="sqrt">√</option>
+        </select>
+      </div>
       <svg ref={svgRef} width={W} height={H} className="hist-svg"
         onPointerMove={onPointerMove}
-        onPointerUp={() => { dragging.current = null; }}
-        onPointerLeave={() => { dragging.current = null; }}
+        onPointerUp={commitDrag}
+        onPointerLeave={commitDrag}
       >
         {displayBuckets.map((b, i) => {
           const bx = valToX(b.display);
@@ -469,11 +527,17 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
         <circle cx={toX}   cy={TRACK_Y} r={6} className="hist-handle" onPointerDown={startDrag("to")} />
       </svg>
       <div className="hist-inputs">
-        <input type="number" className="year-input" value={from}
-          placeholder={formatLabel(minVal)} onChange={(e) => onChange(e.target.value, to)} />
+        <input type="number" className="year-input" value={localFrom}
+          placeholder={formatLabel(minVal)}
+          onChange={(e) => setLocalFrom(e.target.value)}
+          onBlur={() => onChange(localFrom, localTo)}
+        />
         <span>–</span>
-        <input type="number" className="year-input" value={to}
-          placeholder={formatLabel(maxVal)} onChange={(e) => onChange(from, e.target.value)} />
+        <input type="number" className="year-input" value={localTo}
+          placeholder={formatLabel(maxVal)}
+          onChange={(e) => setLocalTo(e.target.value)}
+          onBlur={() => onChange(localFrom, localTo)}
+        />
       </div>
     </div>
   );
@@ -959,6 +1023,20 @@ export default function App() {
             {/* Histogram range filters */}
             {facets && (
               <>
+                {/* Shared bucket-count control for all histograms */}
+                <div className="facet-section hist-buckets-row">
+                  <span className="facet-title" style={{ marginBottom: 0 }}>Histogram buckets</span>
+                  <select
+                    className="hist-scale-select"
+                    value={params.hist_buckets}
+                    onChange={(e) => update({ hist_buckets: parseInt(e.target.value, 10) })}
+                    title="Number of histogram bars"
+                  >
+                    {[10, 20, 30, 50, 100].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
                 <RangeHistogram
                   title="Rating"
                   buckets={(facets.rating_hist ?? []) as HistBucket[]}
@@ -1643,6 +1721,30 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 /* Histogram range filter */
 .hist-section { padding-bottom: 10px; }
+.hist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.hist-header .facet-title { margin-bottom: 0; }
+.hist-scale-select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text2);
+  font-size: .7rem;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+.hist-scale-select:focus { outline: none; border-color: var(--accent); }
+.hist-buckets-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
 .hist-svg { display: block; cursor: crosshair; overflow: visible; }
 .hist-bar { fill: var(--border); }
 .hist-bar-active { fill: var(--accent2); }

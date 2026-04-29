@@ -327,6 +327,56 @@ func buildFilters(q url.Values) M {
 	return M{"match_all": M{}}
 }
 
+// buildFiltersExcluding builds the ES query like buildFilters but omits the
+// range filter for the specified histogram field. Used so each histogram agg
+// shows the distribution for all other active filters, but not its own range.
+func buildFiltersExcluding(q url.Values, exclude string) M {
+	// Clone the values map without the excluded keys
+	clone := make(url.Values)
+	for k, v := range q {
+		clone[k] = v
+	}
+	switch exclude {
+	case "rating":
+		delete(clone, "rating_from")
+		delete(clone, "rating_to")
+	case "ratingNum":
+		delete(clone, "rating_num_from")
+		delete(clone, "rating_num_to")
+	case "cdate":
+		delete(clone, "cdate_from")
+		delete(clone, "cdate_to")
+	}
+	return buildFilters(clone)
+}
+
+// histInterval computes a sensible ES histogram interval given the field's
+// approximate range and the requested number of buckets.
+func histInterval(field string, buckets int) any {
+	if buckets < 1 {
+		buckets = 20
+	}
+	switch field {
+	case "rating":
+		// rating stored as 0–1000; typical range ~500–1000
+		return 1000.0 / float64(buckets)
+	case "ratingNum":
+		// ratingNum can span 0–100k+; use a round interval
+		intervals := []int{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
+		target := 200000 / buckets // assume max ~200k ratings
+		best := intervals[len(intervals)-1]
+		for _, iv := range intervals {
+			if iv >= target {
+				best = iv
+				break
+			}
+		}
+		return best
+	default:
+		return 10
+	}
+}
+
 func buildSort(sortBy, sortDir string) []M {
 	dir := "asc"
 	if sortDir == "desc" {
@@ -368,6 +418,16 @@ type aggEntry struct {
 	Max   *float64 `json:"max"`
 	Avg   *float64 `json:"avg"`
 	Count *int     `json:"count"`
+	// Captures nested agg keys (e.g. the inner "hist" inside a filter agg).
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (a *aggEntry) UnmarshalJSON(data []byte) error {
+	type plain aggEntry
+	if err := json.Unmarshal(data, (*plain)(a)); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &a.Extra)
 }
 
 type esSearchResponse struct {
@@ -386,6 +446,40 @@ type esSearchResponse struct {
 type facetBucket struct {
 	Key      any `json:"key"`
 	DocCount int `json:"doc_count"`
+}
+
+func aggBuckets(aggs map[string]aggEntry, name string) []facetBucket {
+	agg, ok := aggs[name]
+	if !ok {
+		return []facetBucket{}
+	}
+	out := make([]facetBucket, len(agg.Buckets))
+	for i, b := range agg.Buckets {
+		out[i] = facetBucket{Key: b.Key, DocCount: b.DocCount}
+	}
+	return out
+}
+
+// nestedAggBuckets extracts buckets from a filter-wrapped histogram agg.
+// ES shape: aggs[outer] = { doc_count, [inner]: { buckets: [...] } }
+func nestedAggBuckets(aggs map[string]aggEntry, outer, inner string) []facetBucket {
+	outerAgg, ok := aggs[outer]
+	if !ok || outerAgg.Extra == nil {
+		return []facetBucket{}
+	}
+	innerRaw, ok := outerAgg.Extra[inner]
+	if !ok {
+		return []facetBucket{}
+	}
+	var innerAgg aggEntry
+	if err := json.Unmarshal(innerRaw, &innerAgg); err != nil {
+		return []facetBucket{}
+	}
+	out := make([]facetBucket, len(innerAgg.Buckets))
+	for i, b := range innerAgg.Buckets {
+		out[i] = facetBucket{Key: b.Key, DocCount: b.DocCount}
+	}
+	return out
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -421,6 +515,14 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 
 	debugLog("  page=%d size=%d from=%d sort=%s dir=%s", pageNum, sizeNum, from, sortBy, sortDir)
 
+	histBuckets, _ := strconv.Atoi(firstOr(q.Get("hist_buckets"), "30"))
+	if histBuckets < 5 {
+		histBuckets = 5
+	}
+	if histBuckets > 200 {
+		histBuckets = 200
+	}
+
 	body := M{
 		"from":  from,
 		"size":  sizeNum,
@@ -433,10 +535,17 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers": M{"terms": M{"field": "publisher.keyword", "size": 20, "min_doc_count": 1}},
 			"pub_years":  M{"terms": M{"field": "pub_year", "size": 50, "order": M{"_key": "asc"}}},
 			"keywords":   M{"terms": M{"field": "keywords.keyword", "size": 30, "min_doc_count": 1}},
-			// Histograms for range sliders
-			"rating_hist":     M{"histogram": M{"field": "rating", "interval": 10, "min_doc_count": 1}},
-			"rating_num_hist": M{"histogram": M{"field": "ratingNum", "interval": 1000, "min_doc_count": 1}},
-			"cdate_hist":      M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},
+			// Each histogram is wrapped in a filter that excludes its own range,
+			// so the histogram shape stays stable while the user drags the handles.
+			"rating_hist": M{"filter": buildFiltersExcluding(q, "rating"), "aggs": M{
+				"hist": M{"histogram": M{"field": "rating", "interval": histInterval("rating", histBuckets), "min_doc_count": 1}},
+			}},
+			"rating_num_hist": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
+				"hist": M{"histogram": M{"field": "ratingNum", "interval": histInterval("ratingNum", histBuckets), "min_doc_count": 1}},
+			}},
+			"cdate_hist": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
+				"hist": M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},
+			}},
 		},
 	}
 
@@ -484,9 +593,10 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers":      aggBuckets(aggs, "publishers"),
 			"pub_years":       aggBuckets(aggs, "pub_years"),
 			"keywords":        aggBuckets(aggs, "keywords"),
-			"rating_hist":     aggBuckets(aggs, "rating_hist"),
-			"rating_num_hist": aggBuckets(aggs, "rating_num_hist"),
-			"cdate_hist":      aggBuckets(aggs, "cdate_hist"),
+			// Nested: filter agg → inner hist agg → buckets
+			"rating_hist":     nestedAggBuckets(aggs, "rating_hist", "hist"),
+			"rating_num_hist": nestedAggBuckets(aggs, "rating_num_hist", "hist"),
+			"cdate_hist":      nestedAggBuckets(aggs, "cdate_hist", "hist"),
 		},
 	})
 }
@@ -565,18 +675,6 @@ func firstOr(v, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func aggBuckets(aggs map[string]aggEntry, name string) []facetBucket {
-	agg, ok := aggs[name]
-	if !ok {
-		return []facetBucket{}
-	}
-	out := make([]facetBucket, len(agg.Buckets))
-	for i, b := range agg.Buckets {
-		out[i] = facetBucket{Key: b.Key, DocCount: b.DocCount}
-	}
-	return out
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────

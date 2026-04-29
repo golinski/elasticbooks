@@ -18,7 +18,7 @@ use tracing::{debug, error};
 
 use crate::{
     es::{es_json, INDEX},
-    query::{build_filters, build_sort, get_one, parse_multi},
+    query::{build_filters, build_filters_excluding, build_sort, get_one, hist_interval, parse_multi},
     AppState,
 };
 
@@ -85,6 +85,11 @@ pub async fn handle_books(
         "→ GET /api/books"
     );
 
+    let hist_buckets: usize = get_one(&params, "hist_buckets").parse().unwrap_or(30).max(5).min(200);
+
+    let rating_interval    = hist_interval("rating",    hist_buckets);
+    let rating_num_interval = hist_interval("ratingNum", hist_buckets);
+
     let body = json!({
         "from": from,
         "size": size,
@@ -97,9 +102,20 @@ pub async fn handle_books(
             "publishers": { "terms": { "field": "publisher.keyword", "size": 20, "min_doc_count": 1 } },
             "pub_years":  { "terms": { "field": "pub_year",          "size": 50, "order": { "_key": "asc" } } },
             "keywords":   { "terms": { "field": "keywords.keyword",  "size": 30, "min_doc_count": 1 } },
-            "rating_hist":     { "histogram":      { "field": "rating",    "interval": 10,   "min_doc_count": 1 } },
-            "rating_num_hist": { "histogram":      { "field": "ratingNum", "interval": 1000, "min_doc_count": 1 } },
-            "cdate_hist":      { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } }
+            // Each histogram is wrapped in a filter that excludes its own range,
+            // so the histogram shape stays stable while the user drags the handles.
+            "rating_hist": {
+                "filter": build_filters_excluding(&params, &["rating_from", "rating_to"]),
+                "aggs": { "hist": { "histogram": { "field": "rating", "interval": rating_interval, "min_doc_count": 1 } } }
+            },
+            "rating_num_hist": {
+                "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
+                "aggs": { "hist": { "histogram": { "field": "ratingNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
+            },
+            "cdate_hist": {
+                "filter": build_filters_excluding(&params, &["cdate_from", "cdate_to"]),
+                "aggs": { "hist": { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } } }
+            }
         }
     });
 
@@ -140,9 +156,9 @@ pub async fn handle_books(
             "publishers":      agg_buckets(aggs, "publishers"),
             "pub_years":       agg_buckets(aggs, "pub_years"),
             "keywords":        agg_buckets(aggs, "keywords"),
-            "rating_hist":     agg_buckets(aggs, "rating_hist"),
-            "rating_num_hist": agg_buckets(aggs, "rating_num_hist"),
-            "cdate_hist":      agg_buckets(aggs, "cdate_hist"),
+            "rating_hist":     nested_agg_buckets(aggs, "rating_hist",     "hist"),
+            "rating_num_hist": nested_agg_buckets(aggs, "rating_num_hist", "hist"),
+            "cdate_hist":      nested_agg_buckets(aggs, "cdate_hist",      "hist"),
         }
     }))
     .into_response())
@@ -207,9 +223,17 @@ pub async fn handle_stats(State(state): State<AppState>) -> Result<impl IntoResp
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 /// Extract the `buckets` array from an aggregation by name.
-/// Returns an empty array if the aggregation is missing.
 fn agg_buckets<'a>(aggs: &'a Value, name: &str) -> &'a Value {
     aggs.get(name)
         .and_then(|a| a.get("buckets"))
+        .unwrap_or(&Value::Null)
+}
+
+/// Extract buckets from a filter-wrapped histogram agg.
+/// ES shape: aggs[outer] = { doc_count, [inner]: { buckets: [...] } }
+fn nested_agg_buckets<'a>(aggs: &'a Value, outer: &str, inner: &str) -> &'a Value {
+    aggs.get(outer)
+        .and_then(|o| o.get(inner))
+        .and_then(|i| i.get("buckets"))
         .unwrap_or(&Value::Null)
 }

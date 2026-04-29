@@ -233,6 +233,34 @@ pub fn build_filters(params: &MultiParams) -> Value {
     json!({ "bool": bool_clause })
 }
 
+/// Build the ES `query` object from HTTP query parameters,
+/// optionally excluding specific range keys (used for self-excluding histogram aggs).
+pub fn build_filters_excluding(params: &MultiParams, exclude: &[&str]) -> Value {
+    if exclude.is_empty() {
+        return build_filters(params);
+    }
+    let mut filtered = params.clone();
+    for key in exclude {
+        filtered.remove(*key);
+    }
+    build_filters(&filtered)
+}
+
+/// Compute a sensible histogram interval for a given field and bucket count.
+pub fn hist_interval(field: &str, buckets: usize) -> f64 {
+    let b = buckets.max(1) as f64;
+    match field {
+        "rating"    => (1000.0 / b).max(1.0),
+        "ratingNum" => {
+            // Pick a round interval targeting ~buckets bars across 0–200k
+            let target = (200_000.0 / b) as i64;
+            let candidates = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000];
+            *candidates.iter().find(|&&c| c >= target).unwrap_or(&25000) as f64
+        }
+        _ => 1.0,
+    }
+}
+
 /// Build the ES `sort` array from sort field and direction strings.
 pub fn build_sort(sort_by: &str, sort_dir: &str) -> Value {
     let dir = if sort_dir == "desc" { "desc" } else { "asc" };

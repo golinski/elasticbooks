@@ -109,6 +109,7 @@ export interface SearchParams {
   rating_num_to: string;
   cdate_from: string;
   cdate_to: string;
+  hist_buckets: number;
   sort: SortField;
   dir: SortDir;
   page: number;
