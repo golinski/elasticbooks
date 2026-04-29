@@ -76,10 +76,10 @@ CASES: list[Case] = [
          "/api/books?author=Sapkowski&sort=title&dir=asc&size=20"),
 
     Case("series prefix: Wiedźmin",
-         "/api/books?series=Wiedźmin&sort=series&dir=asc&size=20"),
+         "/api/books?series=Wied%C5%BAmin&sort=series&dir=asc&size=20"),
 
-    Case("title prefix: Droga",
-         "/api/books?title=Droga&sort=title&dir=asc&size=10"),
+    Case("title prefix: Droga królów",
+         "/api/books?title=Droga%20kr%C3%B3l%C3%B3w&sort=title&dir=asc&size=10"),
 
     Case("genre: fantasy",
          "/api/books?genre=fantasy&sort=title&dir=asc&size=20"),
