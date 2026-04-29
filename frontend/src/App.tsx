@@ -396,7 +396,7 @@ function GroupedGrid({ books, sortMode, sidebarOpen, onBookClick }: GroupedGridP
 
 interface HistBucket { key: number; doc_count: number; }
 
-type HistScale = "linear" | "log" | "sqrt";
+type HistScale = "linear" | "log" | "sqrt" | "loglog" | "sqrtsqrt";
 
 interface RangeHistogramProps {
   title: string;
@@ -426,10 +426,14 @@ function invScalePos(p: number, min: number, max: number, _scale: HistScale): nu
   return min + Math.max(0, Math.min(1, p)) * span; // always linear
 }
 
+const f = (x: number) => Math.log(1 + x * (Math.E - 1))
+
 /** Compress a normalised count value [0,1] for bar height rendering. */
 function scaleCount(t: number, scale: HistScale): number {
-  if (scale === "log")  return Math.log(1 + t * (Math.E - 1)); // log(1 + t*(e-1)) maps [0,1]→[0,1]
-  if (scale === "sqrt") return Math.sqrt(t);
+  if (scale === "log")    return f(t); // log(1 + t*(e-1)) maps [0,1]→[0,1]
+  if (scale === "loglog") return f(f(t));
+  if (scale === "sqrt")   return Math.sqrt(t);
+  if (scale === "sqrtsqrt")   return Math.sqrt(Math.sqrt(t));
   return t; // linear
 }
 
@@ -527,7 +531,9 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
         >
           <option value="linear">linear</option>
           <option value="log">log height</option>
-          <option value="sqrt">√ height</option>
+          <option value="loglog">loglog height</option>
+          <option value="log">log height</option>
+          <option value="sqrtsqrt">√√ height</option>
         </select>
       </div>
       <svg ref={svgRef} width={W} height={H} className="hist-svg"
@@ -957,7 +963,7 @@ export default function App() {
 
   // Developer-tuning: number of buckets for the three range histograms.
   // Not exposed in the UI — adjust these to get the right granularity.
-  const HIST_BUCKETS = { rating: 40, ratingNum: 30, cdate: 20 };
+  const HIST_BUCKETS = { rating: 400, ratingNum: 40, cdate: 20 };
 
   const facets = data?.facets;
 
