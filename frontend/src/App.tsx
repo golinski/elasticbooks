@@ -410,6 +410,8 @@ interface RangeHistogramProps {
   onChange: (from: string, to: string) => void;
   /** Number of histogram buckets requested from the backend. Default: 30. */
   histBuckets?: number;
+  /** Round a display value before storing. Default: 1 decimal place. */
+  round?: (v: number) => number;
 }
 
 // Map a display value through a scale transform for positioning on the axis.
@@ -437,7 +439,7 @@ function invScalePos(p: number, min: number, max: number, scale: HistScale): num
   return min + clamped * span;
 }
 
-function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, onChange, histBuckets: _histBuckets = 30 }: RangeHistogramProps) {
+function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, onChange, histBuckets: _histBuckets = 30, round = (v) => Math.round(v * 10) / 10 }: RangeHistogramProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   // Local state for the drag — only committed to params on pointer-up
   const [localFrom, setLocalFrom] = useState(from);
@@ -477,7 +479,7 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
     if (!dragging.current || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const v = xToVal(e.clientX - rect.left);
-    const r = Math.round(v * 10) / 10;
+    const r = round(v);
     if (dragging.current === "from") setLocalFrom(String(Math.min(r, toNum)));
     else                             setLocalTo(String(Math.max(r, fromNum)));
   };
@@ -1057,6 +1059,7 @@ export default function App() {
                   formatLabel={(v) => String(v)}
                   onChange={(f, t) => update({ cdate_from: f, cdate_to: t })}
                   histBuckets={HIST_BUCKETS.cdate}
+                  round={Math.round}
                 />
               </>
             )}
