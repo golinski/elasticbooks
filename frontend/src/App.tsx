@@ -1613,14 +1613,14 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .popularity-badge { color: #ff8fa3; }
 .card-badges {
   position: absolute;
-  bottom: 6px;
-  left: 0;
-  right: 0;
+  top: 6px;
+  right: 6px;
+  left: auto;
+  bottom: auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 3px;
-  padding: 0 5px;
-  justify-content: flex-end;
+  align-items: flex-end;
 }
 .card-badges .rating-badge {
   position: static;
