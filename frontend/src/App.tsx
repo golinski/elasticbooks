@@ -447,6 +447,11 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
   const dragging = useRef<"from" | "to" | null>(null);
   const [scale, setScale] = useState<HistScale>("linear");
 
+  // Lock in the widest axis range ever seen so that filtering on this
+  // histogram never shrinks the axis and traps the handles.
+  const axisMin = useRef<number | null>(null);
+  const axisMax = useRef<number | null>(null);
+
   // Keep local state in sync when external params change (e.g. URL navigation)
   useEffect(() => { setLocalFrom(from); }, [from]);
   useEffect(() => { setLocalTo(to);     }, [to]);
@@ -454,8 +459,15 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
   if (!buckets || buckets.length === 0) return null;
 
   const displayBuckets = buckets.map((b) => ({ display: keyToDisplay(b.key), count: b.doc_count }));
-  const minVal = displayBuckets[0].display;
-  const maxVal = displayBuckets[displayBuckets.length - 1].display;
+  const bucketMin = displayBuckets[0].display;
+  const bucketMax = displayBuckets[displayBuckets.length - 1].display;
+
+  // Expand the remembered axis — never shrink it.
+  if (axisMin.current === null || bucketMin < axisMin.current) axisMin.current = bucketMin;
+  if (axisMax.current === null || bucketMax > axisMax.current) axisMax.current = bucketMax;
+
+  const minVal = axisMin.current;
+  const maxVal = axisMax.current;
   const maxCount = Math.max(...displayBuckets.map((b) => b.count), 1);
 
   const fromNum = localFrom !== "" ? parseFloat(localFrom) : minVal;
