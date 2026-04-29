@@ -416,27 +416,21 @@ interface RangeHistogramProps {
 
 // Map a display value through a scale transform for positioning on the axis.
 // All transforms are normalised to [0,1] given [min,max].
-function scalePos(v: number, min: number, max: number, scale: HistScale): number {
+function scalePos(v: number, min: number, max: number, _scale: HistScale): number {
   const span = max - min || 1;
-  const t = (v - min) / span;
-  if (scale === "log") {
-    // log(1+t*span) / log(1+span) — maps [0,span] → [0,1] with log compression
-    const logMax = Math.log(1 + span);
-    return Math.log(1 + (v - min)) / (logMax || 1);
-  }
-  if (scale === "sqrt") return Math.sqrt(Math.max(0, t));
-  return t;
+  return (v - min) / span; // always linear — scale only affects bar heights
 }
 
-function invScalePos(p: number, min: number, max: number, scale: HistScale): number {
+function invScalePos(p: number, min: number, max: number, _scale: HistScale): number {
   const span = max - min || 1;
-  const clamped = Math.max(0, Math.min(1, p));
-  if (scale === "log") {
-    const logMax = Math.log(1 + span);
-    return min + (Math.exp(clamped * logMax) - 1);
-  }
-  if (scale === "sqrt") return min + (clamped * clamped) * span;
-  return min + clamped * span;
+  return min + Math.max(0, Math.min(1, p)) * span; // always linear
+}
+
+/** Compress a normalised count value [0,1] for bar height rendering. */
+function scaleCount(t: number, scale: HistScale): number {
+  if (scale === "log")  return Math.log(1 + t * (Math.E - 1)); // log(1 + t*(e-1)) maps [0,1]→[0,1]
+  if (scale === "sqrt") return Math.sqrt(t);
+  return t; // linear
 }
 
 function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, onChange, histBuckets: _histBuckets = 30, round = (v) => Math.round(v * 10) / 10 }: RangeHistogramProps) {
@@ -532,8 +526,8 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
           title="Axis scale"
         >
           <option value="linear">linear</option>
-          <option value="log">log</option>
-          <option value="sqrt">√</option>
+          <option value="log">log height</option>
+          <option value="sqrt">√ height</option>
         </select>
       </div>
       <svg ref={svgRef} width={W} height={H} className="hist-svg"
@@ -543,7 +537,8 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
       >
         {displayBuckets.map((b, i) => {
           const bx = valToX(b.display);
-          const bh = Math.max(2, (b.count / maxCount) * (TRACK_Y - 4));
+          const t = b.count / maxCount;
+          const bh = Math.max(2, scaleCount(t, scale) * (TRACK_Y - 4));
           const active = b.display >= fromNum && b.display <= toNum;
           return <rect key={i} x={bx - barW / 2} y={TRACK_Y - bh} width={barW} height={bh}
             className={active ? "hist-bar hist-bar-active" : "hist-bar"} />;
