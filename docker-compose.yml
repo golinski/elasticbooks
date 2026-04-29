@@ -22,10 +22,10 @@ services:
     build: ./backend-go
     init: true
     ports:
-      - "3001:3001"
+      - "3002:3002"
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - PORT=3001
+      - PORT=3002
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -37,10 +37,10 @@ services:
     build: ./backend-rs
     init: true
     ports:
-      - "3002:3002"
+      - "3001:3001"
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - PORT=3002
+      - PORT=3001
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -62,7 +62,7 @@ services:
     profiles:
       - localfe
 
-  importer:
+  importer-go:
     build: ./backend-go
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200

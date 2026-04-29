@@ -963,7 +963,7 @@ export default function App() {
 
   // Developer-tuning: number of buckets for the three range histograms.
   // Not exposed in the UI — adjust these to get the right granularity.
-  const HIST_BUCKETS = { rating: 400, ratingNum: 40, cdate: 20 };
+  const HIST_BUCKETS = { rating: 100, ratingNum: 50, cdate: 20 };
 
   const facets = data?.facets;
 
