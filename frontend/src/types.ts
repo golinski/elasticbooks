@@ -39,6 +39,9 @@ export interface Facets {
   publishers: FacetBucket[];
   pub_years: FacetBucket[];
   keywords: FacetBucket[];
+  rating_hist: FacetBucket[];
+  rating_num_hist: FacetBucket[];
+  cdate_hist: FacetBucket[];
 }
 
 // ─── API responses ────────────────────────────────────────────────────────────
@@ -100,6 +103,12 @@ export interface SearchParams {
   keyword_filter: string[];
   year_from: string;
   year_to: string;
+  rating_from: string;
+  rating_to: string;
+  rating_num_from: string;
+  rating_num_to: string;
+  cdate_from: string;
+  cdate_to: string;
   sort: SortField;
   dir: SortDir;
   page: number;

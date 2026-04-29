@@ -96,7 +96,10 @@ pub async fn handle_books(
             "genres":     { "terms": { "field": "genres.keyword",    "size": 30, "min_doc_count": 1 } },
             "publishers": { "terms": { "field": "publisher.keyword", "size": 20, "min_doc_count": 1 } },
             "pub_years":  { "terms": { "field": "pub_year",          "size": 50, "order": { "_key": "asc" } } },
-            "keywords":   { "terms": { "field": "keywords.keyword",  "size": 30, "min_doc_count": 1 } }
+            "keywords":   { "terms": { "field": "keywords.keyword",  "size": 30, "min_doc_count": 1 } },
+            "rating_hist":     { "histogram":      { "field": "rating",    "interval": 10,   "min_doc_count": 1 } },
+            "rating_num_hist": { "histogram":      { "field": "ratingNum", "interval": 1000, "min_doc_count": 1 } },
+            "cdate_hist":      { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } }
         }
     });
 
@@ -131,12 +134,15 @@ pub async fn handle_books(
         "size":  size,
         "books": books,
         "facets": {
-            "authors":    agg_buckets(aggs, "authors"),
-            "series":     agg_buckets(aggs, "series"),
-            "genres":     agg_buckets(aggs, "genres"),
-            "publishers": agg_buckets(aggs, "publishers"),
-            "pub_years":  agg_buckets(aggs, "pub_years"),
-            "keywords":   agg_buckets(aggs, "keywords"),
+            "authors":         agg_buckets(aggs, "authors"),
+            "series":          agg_buckets(aggs, "series"),
+            "genres":          agg_buckets(aggs, "genres"),
+            "publishers":      agg_buckets(aggs, "publishers"),
+            "pub_years":       agg_buckets(aggs, "pub_years"),
+            "keywords":        agg_buckets(aggs, "keywords"),
+            "rating_hist":     agg_buckets(aggs, "rating_hist"),
+            "rating_num_hist": agg_buckets(aggs, "rating_num_hist"),
+            "cdate_hist":      agg_buckets(aggs, "cdate_hist"),
         }
     }))
     .into_response())

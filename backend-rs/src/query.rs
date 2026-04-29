@@ -171,6 +171,54 @@ pub fn build_filters(params: &MultiParams) -> Value {
         }
     }
 
+    // ── Rating range (user enters display-scale 0–10; ES stores rating as 0–1000, so multiply by 10) ──
+    let rating_from = get_one(params, "rating_from");
+    let rating_to   = get_one(params, "rating_to");
+    if !rating_from.is_empty() || !rating_to.is_empty() {
+        let mut rng = serde_json::Map::new();
+        if let Ok(f) = rating_from.parse::<f64>() {
+            rng.insert("gte".into(), json!(f * 10.0));
+        }
+        if let Ok(f) = rating_to.parse::<f64>() {
+            rng.insert("lte".into(), json!(f * 10.0));
+        }
+        if !rng.is_empty() {
+            filters.push(json!({ "range": { "rating": rng } }));
+        }
+    }
+
+    // ── Number-of-ratings range ───────────────────────────────────────────────
+    let rn_from = get_one(params, "rating_num_from");
+    let rn_to   = get_one(params, "rating_num_to");
+    if !rn_from.is_empty() || !rn_to.is_empty() {
+        let mut rng = serde_json::Map::new();
+        if let Ok(n) = rn_from.parse::<i64>() {
+            rng.insert("gte".into(), json!(n));
+        }
+        if let Ok(n) = rn_to.parse::<i64>() {
+            rng.insert("lte".into(), json!(n));
+        }
+        if !rng.is_empty() {
+            filters.push(json!({ "range": { "ratingNum": rng } }));
+        }
+    }
+
+    // ── Date-added year range ─────────────────────────────────────────────────
+    let cd_from = get_one(params, "cdate_from");
+    let cd_to   = get_one(params, "cdate_to");
+    if !cd_from.is_empty() || !cd_to.is_empty() {
+        let mut rng = serde_json::Map::new();
+        if !cd_from.is_empty() {
+            rng.insert("gte".into(), json!(format!("{cd_from}-01-01")));
+        }
+        if !cd_to.is_empty() {
+            rng.insert("lte".into(), json!(format!("{cd_to}-12-31")));
+        }
+        if !rng.is_empty() {
+            filters.push(json!({ "range": { "cdate": rng } }));
+        }
+    }
+
     // ── Assemble bool query ───────────────────────────────────────────────────
     if must.is_empty() && filters.is_empty() {
         return json!({ "match_all": {} });

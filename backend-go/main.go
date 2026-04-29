@@ -264,6 +264,56 @@ func buildFilters(q url.Values) M {
 		}
 	}
 
+	// Rating range (user enters display-scale 0–10; ES stores rating as 0–1000, so multiply by 10)
+	if from, to := q.Get("rating_from"), q.Get("rating_to"); from != "" || to != "" {
+		rng := M{}
+		if from != "" {
+			if f, err := strconv.ParseFloat(from, 64); err == nil {
+				rng["gte"] = f * 10
+			}
+		}
+		if to != "" {
+			if f, err := strconv.ParseFloat(to, 64); err == nil {
+				rng["lte"] = f * 10
+			}
+		}
+		if len(rng) > 0 {
+			filters = append(filters, M{"range": M{"rating": rng}})
+		}
+	}
+
+	// Number-of-ratings range
+	if from, to := q.Get("rating_num_from"), q.Get("rating_num_to"); from != "" || to != "" {
+		rng := M{}
+		if from != "" {
+			if n, err := strconv.Atoi(from); err == nil {
+				rng["gte"] = n
+			}
+		}
+		if to != "" {
+			if n, err := strconv.Atoi(to); err == nil {
+				rng["lte"] = n
+			}
+		}
+		if len(rng) > 0 {
+			filters = append(filters, M{"range": M{"ratingNum": rng}})
+		}
+	}
+
+	// Date-added year range
+	if from, to := q.Get("cdate_from"), q.Get("cdate_to"); from != "" || to != "" {
+		rng := M{}
+		if from != "" {
+			rng["gte"] = from + "-01-01"
+		}
+		if to != "" {
+			rng["lte"] = to + "-12-31"
+		}
+		if len(rng) > 0 {
+			filters = append(filters, M{"range": M{"cdate": rng}})
+		}
+	}
+
 	bool := M{}
 	if len(must) > 0 {
 		bool["must"] = must
@@ -383,6 +433,10 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers": M{"terms": M{"field": "publisher.keyword", "size": 20, "min_doc_count": 1}},
 			"pub_years":  M{"terms": M{"field": "pub_year", "size": 50, "order": M{"_key": "asc"}}},
 			"keywords":   M{"terms": M{"field": "keywords.keyword", "size": 30, "min_doc_count": 1}},
+			// Histograms for range sliders
+			"rating_hist":     M{"histogram": M{"field": "rating", "interval": 10, "min_doc_count": 1}},
+			"rating_num_hist": M{"histogram": M{"field": "ratingNum", "interval": 1000, "min_doc_count": 1}},
+			"cdate_hist":      M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},
 		},
 	}
 
@@ -424,12 +478,15 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 		"size":  sizeNum,
 		"books": books,
 		"facets": M{
-			"authors":    aggBuckets(aggs, "authors"),
-			"series":     aggBuckets(aggs, "series"),
-			"genres":     aggBuckets(aggs, "genres"),
-			"publishers": aggBuckets(aggs, "publishers"),
-			"pub_years":  aggBuckets(aggs, "pub_years"),
-			"keywords":   aggBuckets(aggs, "keywords"),
+			"authors":         aggBuckets(aggs, "authors"),
+			"series":          aggBuckets(aggs, "series"),
+			"genres":          aggBuckets(aggs, "genres"),
+			"publishers":      aggBuckets(aggs, "publishers"),
+			"pub_years":       aggBuckets(aggs, "pub_years"),
+			"keywords":        aggBuckets(aggs, "keywords"),
+			"rating_hist":     aggBuckets(aggs, "rating_hist"),
+			"rating_num_hist": aggBuckets(aggs, "rating_num_hist"),
+			"cdate_hist":      aggBuckets(aggs, "cdate_hist"),
 		},
 	})
 }

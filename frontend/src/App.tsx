@@ -24,6 +24,9 @@ const DEFAULT_PARAMS: SearchParams = {
   author_filter: [], series_filter: [], genre_filter: [], publisher_filter: [],
   keyword_filter: [],
   year_from: "", year_to: "",
+  rating_from: "", rating_to: "",
+  rating_num_from: "", rating_num_to: "",
+  cdate_from: "", cdate_to: "",
   sort: "title", dir: "asc", page: 1, size: 40,
 };
 
@@ -46,6 +49,12 @@ function parseQS(): SearchParams {
     keyword_filter:   p.getAll("keyword_filter"),
     year_from: p.get("year_from") ?? "",
     year_to:   p.get("year_to")   ?? "",
+    rating_from:     p.get("rating_from")     ?? "",
+    rating_to:       p.get("rating_to")       ?? "",
+    rating_num_from: p.get("rating_num_from") ?? "",
+    rating_num_to:   p.get("rating_num_to")   ?? "",
+    cdate_from:      p.get("cdate_from")      ?? "",
+    cdate_to:        p.get("cdate_to")        ?? "",
     sort:      explicitSort ?? (hasQ ? "score" : "title"),
     dir:       (p.get("dir") as "asc" | "desc") ?? (hasQ && !explicitSort ? "desc" : "asc"),
     page:      parseInt(p.get("page") ?? "1", 10),
@@ -70,6 +79,12 @@ function toQS(s: SearchParams): string {
   s.keyword_filter.forEach((v)   => p.append("keyword_filter",   v));
   set("year_from", s.year_from);
   set("year_to",   s.year_to);
+  set("rating_from",     s.rating_from);
+  set("rating_to",       s.rating_to);
+  set("rating_num_from", s.rating_num_from);
+  set("rating_num_to",   s.rating_num_to);
+  set("cdate_from",      s.cdate_from);
+  set("cdate_to",        s.cdate_to);
   if (s.sort !== "title") p.set("sort", s.sort);
   if (s.dir  !== "asc")   p.set("dir",  s.dir);
   if (s.page > 1)         p.set("page", String(s.page));
@@ -377,6 +392,92 @@ function GroupedGrid({ books, sortMode, sidebarOpen, onBookClick }: GroupedGridP
   );
 }
 
+// ─── RangeHistogram ───────────────────────────────────────────────────────────
+
+interface HistBucket { key: number; doc_count: number; }
+
+interface RangeHistogramProps {
+  title: string;
+  buckets: HistBucket[];
+  from: string;
+  to: string;
+  /** Convert a raw ES bucket key to the display scale */
+  keyToDisplay: (k: number) => number;
+  formatLabel: (v: number) => string;
+  onChange: (from: string, to: string) => void;
+}
+
+function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, onChange }: RangeHistogramProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragging = useRef<"from" | "to" | null>(null);
+
+  if (!buckets || buckets.length === 0) return null;
+
+  const displayBuckets = buckets.map((b) => ({ display: keyToDisplay(b.key), count: b.doc_count }));
+  const minVal = displayBuckets[0].display;
+  const maxVal = displayBuckets[displayBuckets.length - 1].display;
+  const maxCount = Math.max(...displayBuckets.map((b) => b.count), 1);
+
+  const fromNum = from !== "" ? parseFloat(from) : minVal;
+  const toNum   = to   !== "" ? parseFloat(to)   : maxVal;
+
+  const W = 188, H = 52, PAD = 8, TRACK_Y = H - 10;
+  const innerW = W - PAD * 2;
+
+  const valToX = (v: number) => PAD + ((v - minVal) / (maxVal - minVal || 1)) * innerW;
+  const xToVal = (x: number) => {
+    const raw = minVal + ((x - PAD) / innerW) * (maxVal - minVal);
+    return Math.max(minVal, Math.min(maxVal, raw));
+  };
+
+  const startDrag = (handle: "from" | "to") => (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = handle;
+  };
+
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!dragging.current || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const v = xToVal(e.clientX - rect.left);
+    const r = Math.round(v * 10) / 10;
+    if (dragging.current === "from") onChange(String(Math.min(r, toNum)), to);
+    else onChange(from, String(Math.max(r, fromNum)));
+  };
+
+  const fromX = valToX(fromNum);
+  const toX   = valToX(toNum);
+  const barW  = Math.max(1, innerW / displayBuckets.length - 1);
+
+  return (
+    <div className="facet-section hist-section">
+      <div className="facet-title">{title}</div>
+      <svg ref={svgRef} width={W} height={H} className="hist-svg"
+        onPointerMove={onPointerMove}
+        onPointerUp={() => { dragging.current = null; }}
+        onPointerLeave={() => { dragging.current = null; }}
+      >
+        {displayBuckets.map((b, i) => {
+          const bx = valToX(b.display);
+          const bh = Math.max(2, (b.count / maxCount) * (TRACK_Y - 4));
+          const active = b.display >= fromNum && b.display <= toNum;
+          return <rect key={i} x={bx - barW / 2} y={TRACK_Y - bh} width={barW} height={bh}
+            className={active ? "hist-bar hist-bar-active" : "hist-bar"} />;
+        })}
+        <rect x={fromX} y={0} width={Math.max(0, toX - fromX)} height={TRACK_Y} className="hist-range-fill" />
+        <line x1={PAD} y1={TRACK_Y} x2={W - PAD} y2={TRACK_Y} className="hist-track" />
+        <circle cx={fromX} cy={TRACK_Y} r={6} className="hist-handle" onPointerDown={startDrag("from")} />
+        <circle cx={toX}   cy={TRACK_Y} r={6} className="hist-handle" onPointerDown={startDrag("to")} />
+      </svg>
+      <div className="hist-inputs">
+        <input type="number" className="year-input" value={from}
+          placeholder={formatLabel(minVal)} onChange={(e) => onChange(e.target.value, to)} />
+        <span>–</span>
+        <input type="number" className="year-input" value={to}
+          placeholder={formatLabel(maxVal)} onChange={(e) => onChange(from, e.target.value)} />
+      </div>
+    </div>
+  );
+}
 
 
 interface FacetSectionProps {
@@ -754,7 +855,10 @@ export default function App() {
     params.genre || params.keyword || params.publisher ||
     params.author_filter.length || params.series_filter.length ||
     params.genre_filter.length || params.publisher_filter.length ||
-    params.keyword_filter.length || params.year_from || params.year_to,
+    params.keyword_filter.length || params.year_from || params.year_to ||
+    params.rating_from || params.rating_to ||
+    params.rating_num_from || params.rating_num_to ||
+    params.cdate_from || params.cdate_to,
     [params]
   );
 
@@ -851,6 +955,39 @@ export default function App() {
                 />
               </div>
             </div>
+
+            {/* Histogram range filters */}
+            {facets && (
+              <>
+                <RangeHistogram
+                  title="Rating"
+                  buckets={(facets.rating_hist ?? []) as HistBucket[]}
+                  from={params.rating_from}
+                  to={params.rating_to}
+                  keyToDisplay={(k) => Math.round(k) / 10}
+                  formatLabel={(v) => v.toFixed(1)}
+                  onChange={(f, t) => update({ rating_from: f, rating_to: t })}
+                />
+                <RangeHistogram
+                  title="Number of ratings"
+                  buckets={(facets.rating_num_hist ?? []) as HistBucket[]}
+                  from={params.rating_num_from}
+                  to={params.rating_num_to}
+                  keyToDisplay={(k) => k}
+                  formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                  onChange={(f, t) => update({ rating_num_from: f, rating_num_to: t })}
+                />
+                <RangeHistogram
+                  title="Date added"
+                  buckets={(facets.cdate_hist ?? []) as HistBucket[]}
+                  from={params.cdate_from}
+                  to={params.cdate_to}
+                  keyToDisplay={(k) => new Date(k).getFullYear()}
+                  formatLabel={(v) => String(v)}
+                  onChange={(f, t) => update({ cdate_from: f, cdate_to: t })}
+                />
+              </>
+            )}
 
             {/* Facets from results */}
             {facets && (
@@ -958,6 +1095,24 @@ export default function App() {
                 <Chip
                   label={`year: ${params.year_from || "…"}–${params.year_to || "…"}`}
                   onRemove={() => update({ year_from: "", year_to: "" })}
+                />
+              )}
+              {(params.rating_from || params.rating_to) && (
+                <Chip
+                  label={`rating: ${params.rating_from || "…"}–${params.rating_to || "…"}`}
+                  onRemove={() => update({ rating_from: "", rating_to: "" })}
+                />
+              )}
+              {(params.rating_num_from || params.rating_num_to) && (
+                <Chip
+                  label={`# ratings: ${params.rating_num_from || "…"}–${params.rating_num_to || "…"}`}
+                  onRemove={() => update({ rating_num_from: "", rating_num_to: "" })}
+                />
+              )}
+              {(params.cdate_from || params.cdate_to) && (
+                <Chip
+                  label={`added: ${params.cdate_from || "…"}–${params.cdate_to || "…"}`}
+                  onRemove={() => update({ cdate_from: "", cdate_to: "" })}
                 />
               )}
             </div>
@@ -1485,6 +1640,24 @@ input[type="checkbox"] { accent-color: var(--accent); }
   border-radius: 4px;
   box-shadow: 0 0 60px rgba(0,0,0,.8);
 }
+
+/* Histogram range filter */
+.hist-section { padding-bottom: 10px; }
+.hist-svg { display: block; cursor: crosshair; overflow: visible; }
+.hist-bar { fill: var(--border); }
+.hist-bar-active { fill: var(--accent2); }
+.hist-range-fill { fill: var(--accent2); opacity: .12; pointer-events: none; }
+.hist-track { stroke: var(--border); stroke-width: 2; }
+.hist-handle {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.hist-handle:hover { fill: var(--accent2); }
+.hist-inputs { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.hist-inputs .year-input { width: 72px; }
 
 /* Letter index */
 .content-with-index {
