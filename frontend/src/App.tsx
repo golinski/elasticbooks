@@ -103,7 +103,7 @@ const SORT_OPTIONS: Array<{ v: SortField; l: string }> = [
   { v: "pub_year",   l: "Year" },
   { v: "series",     l: "Series" },
   { v: "rating",     l: "Rating" },
-  { v: "popularity", l: "Popularity (# ratings)" },
+  { v: "popularity", l: "Popularity (# readers)" },
   { v: "cdate",      l: "Date added" },
   { v: "score",      l: "Relevance score" },
 ];
@@ -273,13 +273,13 @@ function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCard
   const coverUrl = !imgErr && book.cover_url ? book.cover_url : null;
   const sizes = useGridItemSizes(sidebarOpen);
 
-  // Bottom-left badges: score (when searching) + ratingNum — always visible
+  // Bottom-left badges: score (when searching) + readersNum — always visible
   const scoreNode = sortMode === "score" && book._score != null
     ? <span className="rating-badge score-badge" title={`Relevance: ${book._score.toFixed(2)}`}>★{book._score.toFixed(1)}</span>
     : null;
 
-  const ratingNumNode = book.ratingNum != null
-    ? <span className="rating-badge popularity-badge" title={`${book.ratingNum.toLocaleString()} ratings`}>♥{formatPopularity(book.ratingNum)}</span>
+  const ratingNumNode = book.readersNum != null
+    ? <span className="rating-badge popularity-badge" title={`${book.readersNum.toLocaleString()} readers`}>♥{formatPopularity(book.readersNum)}</span>
     : null;
 
   const ratingNode = book.rating != null
@@ -730,6 +730,11 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
                       {" "}({book.ratingNum.toLocaleString()} ratings)
                     </span>
                   )}
+                  {book.readersNum != null && (
+                    <span className="modal-ratingnum">
+                      {" "}· {book.readersNum.toLocaleString()} readers
+                    </span>
+                  )}
                 </span>
               </div>
             )}
@@ -906,7 +911,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     fetchBooks(params, {
-      hist_buckets: String(Math.max(HIST_BUCKETS.rating, HIST_BUCKETS.ratingNum, HIST_BUCKETS.cdate)),
+      hist_buckets: String(Math.max(HIST_BUCKETS.rating, HIST_BUCKETS.readersNum, HIST_BUCKETS.cdate)),
     })
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Unknown error"))
@@ -963,7 +968,7 @@ export default function App() {
 
   // Developer-tuning: number of buckets for the three range histograms.
   // Not exposed in the UI — adjust these to get the right granularity.
-  const HIST_BUCKETS = { rating: 100, ratingNum: 50, cdate: 20 };
+  const HIST_BUCKETS = { rating: 100, readersNum: 50, cdate: 20 };
 
   const facets = data?.facets;
 
@@ -1078,14 +1083,14 @@ export default function App() {
                   round={(v) => Math.round(v * 10) / 10}
                 />
                 <RangeHistogram
-                  title="Number of ratings"
+                  title="Number of readers"
                   buckets={(facets.rating_num_hist ?? []) as HistBucket[]}
                   from={params.rating_num_from}
                   to={params.rating_num_to}
                   keyToDisplay={(k) => k}
                   formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
                   onChange={(f, t) => update({ rating_num_from: f, rating_num_to: t })}
-                  histBuckets={HIST_BUCKETS.ratingNum}
+                  histBuckets={HIST_BUCKETS.readersNum}
                 />
                 <RangeHistogram
                   title="Date added"

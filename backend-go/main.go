@@ -360,10 +360,10 @@ func histInterval(field string, buckets int) any {
 	case "rating":
 		// rating stored as raw Tellico value 0–1000
 		return 1000.0 / float64(buckets)
-	case "ratingNum":
-		// ratingNum can span 0–100k+; use a round interval
+	case "ratingNum", "readersNum":
+		// readersNum can span 0–100k+; use a round interval
 		intervals := []int{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
-		target := 200000 / buckets // assume max ~200k ratings
+		target := 200000 / buckets // assume max ~200k readers
 		best := intervals[len(intervals)-1]
 		for _, iv := range intervals {
 			if iv >= target {
@@ -401,7 +401,7 @@ func buildSort(sortBy, sortDir string) []M {
 	case "score":
 		return []M{{"_score": M{"order": dir}}, {"title.keyword": M{"order": "asc"}}}
 	case "popularity":
-		return []M{{"ratingNum": M{"order": dir, "missing": "_last"}}}
+		return []M{{"readersNum": M{"order": dir, "missing": "_last"}}}
 	default:
 		return []M{{"_score": M{"order": "desc"}}, {"title.keyword": M{"order": "asc"}}}
 	}
@@ -541,7 +541,7 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 				"hist": M{"histogram": M{"field": "rating", "interval": histInterval("rating", histBuckets), "min_doc_count": 1}},
 			}},
 			"rating_num_hist": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
-				"hist": M{"histogram": M{"field": "ratingNum", "interval": histInterval("ratingNum", histBuckets), "min_doc_count": 1}},
+				"hist": M{"histogram": M{"field": "readersNum", "interval": histInterval("readersNum", histBuckets), "min_doc_count": 1}},
 			}},
 			"cdate_hist": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
 				"hist": M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},

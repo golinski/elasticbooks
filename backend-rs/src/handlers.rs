@@ -110,7 +110,7 @@ pub async fn handle_books(
             },
             "rating_num_hist": {
                 "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
-                "aggs": { "hist": { "histogram": { "field": "ratingNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
+                "aggs": { "hist": { "histogram": { "field": "readersNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
             },
             "cdate_hist": {
                 "filter": build_filters_excluding(&params, &["cdate_from", "cdate_to"]),

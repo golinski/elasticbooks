@@ -16,6 +16,7 @@ export interface Book {
   keywords: string[];
   rating: number | null;
   ratingNum: number | null;
+  readersNum: number | null;
   cover: string | null;
   cover_url: string | null;
   comments: string | null;

@@ -78,6 +78,8 @@ struct TellicoEntry {
     rating: String,
     #[serde(rename = "ratingNum", default)]
     rating_num: String,
+    #[serde(rename = "readersNum", default)]
+    readers_num: String,
     #[serde(default)]
     cover: String,
     #[serde(default)]
@@ -153,6 +155,8 @@ pub struct BookDoc {
     pub rating: Option<f64>,
     #[serde(rename = "ratingNum")]
     pub rating_num: Option<i64>,
+    #[serde(rename = "readersNum")]
+    pub readers_num: Option<i64>,
     pub cover: Option<String>,
     pub cover_url: Option<String>,
     pub comments: Option<String>,
@@ -249,6 +253,7 @@ async fn create_index(client: &Client, es_url: &str) -> Result<()> {
                 "keywords":    { "type": "text", "analyzer": "text_analyzer", "fields": { "keyword": { "type": "keyword" } } },
                 "rating":      { "type": "float" },
                 "ratingNum":   { "type": "integer" },
+                "readersNum":  { "type": "integer" },
                 "cover":       { "type": "keyword" },
                 "cover_url":   { "type": "keyword", "index": false },
                 "comments":    { "type": "text", "analyzer": "text_analyzer" },
@@ -420,6 +425,7 @@ fn parse_entry_ref(
         keywords: filter_empty(e.keywords.items.clone()),
         rating,
         rating_num: opt_i64(&e.rating_num),
+        readers_num: opt_i64(&e.readers_num),
         cover,
         cover_url,
         comments: opt_str(&e.comments),
