@@ -264,17 +264,17 @@ func buildFilters(q url.Values) M {
 		}
 	}
 
-	// Rating range (user enters display-scale 0–10; ES stores rating as 0–1000, so multiply by 10)
+	// Rating range (user enters display-scale 0–10; ES stores raw Tellico value 0–1000, so multiply by 100)
 	if from, to := q.Get("rating_from"), q.Get("rating_to"); from != "" || to != "" {
 		rng := M{}
 		if from != "" {
 			if f, err := strconv.ParseFloat(from, 64); err == nil {
-				rng["gte"] = f * 10
+				rng["gte"] = f * 100
 			}
 		}
 		if to != "" {
 			if f, err := strconv.ParseFloat(to, 64); err == nil {
-				rng["lte"] = f * 10
+				rng["lte"] = f * 100
 			}
 		}
 		if len(rng) > 0 {
@@ -358,7 +358,7 @@ func histInterval(field string, buckets int) any {
 	}
 	switch field {
 	case "rating":
-		// rating stored as 0–1000; typical range ~500–1000
+		// rating stored as raw Tellico value 0–1000
 		return 1000.0 / float64(buckets)
 	case "ratingNum":
 		// ratingNum can span 0–100k+; use a round interval

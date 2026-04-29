@@ -394,7 +394,9 @@ fn parse_entry_ref(
     covers: &std::collections::HashMap<String, String>,
 ) -> BookDoc {
     let id: i64 = e.id.trim().parse().unwrap_or(0);
-    let rating = opt_f64(&e.rating).map(|r| r / 10.0);
+    // Rating stored as-is from Tellico (integer * 100, e.g. 889 = 8.89 stars).
+    // Frontend divides by 100 for display.
+    let rating = opt_f64(&e.rating);
     let cover = opt_str(&e.cover);
     let cover_url = cover
         .as_deref()

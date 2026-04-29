@@ -283,7 +283,7 @@ function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCard
     : null;
 
   const ratingNode = book.rating != null
-    ? <span className="rating-badge" title={`Rating: ${(book.rating / 10).toFixed(1)}`}>{(book.rating / 10).toFixed(1)}</span>
+    ? <span className="rating-badge" title={`Rating: ${(book.rating / 100).toFixed(1)}`}>{(book.rating / 100).toFixed(1)}</span>
     : null;
 
   return (
@@ -724,7 +724,7 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
               <div className="modal-row">
                 <span className="modal-label">Rating</span>
                 <span>
-                  {(book.rating / 10).toFixed(1)}
+                  {(book.rating / 100).toFixed(1)}
                   {book.ratingNum != null && (
                     <span className="modal-ratingnum">
                       {" "}({book.ratingNum.toLocaleString()} ratings)
@@ -1067,7 +1067,7 @@ export default function App() {
                   buckets={(facets.rating_hist ?? []) as HistBucket[]}
                   from={params.rating_from}
                   to={params.rating_to}
-                  keyToDisplay={(k) => Math.round(k) / 10}
+                  keyToDisplay={(k) => Math.round(k) / 100}
                   formatLabel={(v) => v.toFixed(1)}
                   onChange={(f, t) => update({ rating_from: f, rating_to: t })}
                   histBuckets={HIST_BUCKETS.rating}

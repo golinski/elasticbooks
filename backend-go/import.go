@@ -167,12 +167,11 @@ func filterEmpty(ss []string) []string {
 func parseEntry(e tellicoEntry, covers map[string]string) bookDoc {
 	id, _ := strconv.Atoi(strings.TrimSpace(e.ID))
 
-	// rating is stored as integer * 100 in Tellico (e.g. 889 = 8.89 stars).
-	// Divide by 10 to match what the original TS importer stored in ES.
+	// rating is stored as-is from Tellico (integer * 100, e.g. 889 = 8.89 stars).
+	// Frontend divides by 100 for display.
 	var rating *float64
 	if r := parseFloatPtr(e.Rating); r != nil {
-		v := *r / 10.0
-		rating = &v
+		rating = r
 	}
 
 	coverFile := strPtr(e.Cover)
