@@ -505,7 +505,21 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
 
   const fromX = valToX(fromNum);
   const toX   = valToX(toNum);
-  const barW  = Math.max(1, innerW / displayBuckets.length - 1);
+
+  // Bar width: derive from the pixel distance between adjacent bucket centres
+  // on the axis, not from the count of currently-returned buckets. This keeps
+  // bars the same width regardless of how many buckets the filtered response
+  // contains, and prevents overlap when the range narrows.
+  const barW = (() => {
+    if (displayBuckets.length < 2) return Math.max(1, innerW / 20);
+    // Average pixel gap between consecutive bucket centres on the scaled axis
+    const gaps: number[] = [];
+    for (let i = 1; i < displayBuckets.length; i++) {
+      gaps.push(valToX(displayBuckets[i].display) - valToX(displayBuckets[i - 1].display));
+    }
+    const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    return Math.max(1, avgGap - 1);
+  })();
 
   return (
     <div className="facet-section hist-section">
