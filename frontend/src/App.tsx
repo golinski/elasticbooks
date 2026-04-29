@@ -279,7 +279,7 @@ function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCard
     : null;
 
   const ratingNumNode = book.readersNum != null
-    ? <span className="rating-badge popularity-badge" title={`${book.readersNum.toLocaleString()} readers`}>♥{formatPopularity(book.readersNum)}</span>
+    ? <span className="rating-badge popularity-badge" title={`${book.readersNum.toLocaleString()} readers`}>🕮{formatPopularity(book.readersNum)}</span>
     : null;
 
   const ratingNode = book.rating != null
