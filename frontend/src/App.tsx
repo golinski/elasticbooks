@@ -540,8 +540,13 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
           const t = b.count / maxCount;
           const bh = Math.max(2, scaleCount(t, scale) * (TRACK_Y - 4));
           const active = b.display >= fromNum && b.display <= toNum;
-          return <rect key={i} x={bx - barW / 2} y={TRACK_Y - bh} width={barW} height={bh}
-            className={active ? "hist-bar hist-bar-active" : "hist-bar"} />;
+          const label = `${formatLabel(b.display)}: ${b.count.toLocaleString()} books`;
+          return (
+            <rect key={i} x={bx - barW / 2} y={TRACK_Y - bh} width={barW} height={bh}
+              className={active ? "hist-bar hist-bar-active" : "hist-bar"}>
+              <title>{label}</title>
+            </rect>
+          );
         })}
         <rect x={fromX} y={0} width={Math.max(0, toX - fromX)} height={TRACK_Y} className="hist-range-fill" />
         <line x1={PAD} y1={TRACK_Y} x2={W - PAD} y2={TRACK_Y} className="hist-track" />
