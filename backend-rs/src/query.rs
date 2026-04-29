@@ -171,16 +171,16 @@ pub fn build_filters(params: &MultiParams) -> Value {
         }
     }
 
-    // ── Rating range (user enters display-scale 0–10; ES stores raw Tellico value 0–1000, so multiply by 100) ──
+    // ── Rating range (params are in 0–1000 integer scale, matching ES storage) ──
     let rating_from = get_one(params, "rating_from");
     let rating_to   = get_one(params, "rating_to");
     if !rating_from.is_empty() || !rating_to.is_empty() {
         let mut rng = serde_json::Map::new();
-        if let Ok(f) = rating_from.parse::<f64>() {
-            rng.insert("gte".into(), json!(f * 100.0));
+        if let Ok(n) = rating_from.parse::<i64>() {
+            rng.insert("gte".into(), json!(n));
         }
-        if let Ok(f) = rating_to.parse::<f64>() {
-            rng.insert("lte".into(), json!(f * 100.0));
+        if let Ok(n) = rating_to.parse::<i64>() {
+            rng.insert("lte".into(), json!(n));
         }
         if !rng.is_empty() {
             filters.push(json!({ "range": { "rating": rng } }));

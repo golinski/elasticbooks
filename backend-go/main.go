@@ -264,17 +264,17 @@ func buildFilters(q url.Values) M {
 		}
 	}
 
-	// Rating range (user enters display-scale 0–10; ES stores raw Tellico value 0–1000, so multiply by 100)
+	// Rating range (params are in 0–1000 integer scale, matching ES storage)
 	if from, to := q.Get("rating_from"), q.Get("rating_to"); from != "" || to != "" {
 		rng := M{}
 		if from != "" {
-			if f, err := strconv.ParseFloat(from, 64); err == nil {
-				rng["gte"] = f * 100
+			if n, err := strconv.Atoi(from); err == nil {
+				rng["gte"] = n
 			}
 		}
 		if to != "" {
-			if f, err := strconv.ParseFloat(to, 64); err == nil {
-				rng["lte"] = f * 100
+			if n, err := strconv.Atoi(to); err == nil {
+				rng["lte"] = n
 			}
 		}
 		if len(rng) > 0 {

@@ -1065,12 +1065,17 @@ export default function App() {
                 <RangeHistogram
                   title="Rating"
                   buckets={(facets.rating_hist ?? []) as HistBucket[]}
-                  from={params.rating_from}
-                  to={params.rating_to}
-                  keyToDisplay={(k) => Math.round(k) / 100}
+                  from={params.rating_from === "" ? "" : String(parseFloat(params.rating_from) / 100)}
+                  to={params.rating_to === "" ? "" : String(parseFloat(params.rating_to) / 100)}
+                  keyToDisplay={(k) => k / 100}
                   formatLabel={(v) => v.toFixed(1)}
-                  onChange={(f, t) => update({ rating_from: f, rating_to: t })}
+                  onChange={(f, t) => {
+                    // f and t are display-scale (0–10); convert to 0–1000 integers for params
+                    const toRaw = (s: string) => s === "" ? "" : String(Math.round(parseFloat(s) * 100));
+                    update({ rating_from: toRaw(f), rating_to: toRaw(t) });
+                  }}
                   histBuckets={HIST_BUCKETS.rating}
+                  round={(v) => Math.round(v * 10) / 10}
                 />
                 <RangeHistogram
                   title="Number of ratings"
@@ -1206,7 +1211,7 @@ export default function App() {
               )}
               {(params.rating_from || params.rating_to) && (
                 <Chip
-                  label={`rating: ${params.rating_from || "…"}–${params.rating_to || "…"}`}
+                  label={`rating: ${params.rating_from ? (parseFloat(params.rating_from) / 100).toFixed(1) : "…"}–${params.rating_to ? (parseFloat(params.rating_to) / 100).toFixed(1) : "…"}`}
                   onRemove={() => update({ rating_from: "", rating_to: "" })}
                 />
               )}
