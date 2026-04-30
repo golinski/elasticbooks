@@ -460,15 +460,23 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
   const bucketMin = displayBuckets[0].display;
   const bucketMax = displayBuckets[displayBuckets.length - 1].display;
 
+  // Bucket step in display scale — used to compute upper bounds.
+  const bucketStep = displayBuckets.length >= 2
+    ? displayBuckets[1].display - displayBuckets[0].display
+    : 1;
+
   // Expand the remembered axis — never shrink it.
+  // axisMax tracks the upper bound of the last bucket (bucketMax + bucketStep).
   if (axisMin.current === null || bucketMin < axisMin.current) axisMin.current = bucketMin;
-  if (axisMax.current === null || bucketMax > axisMax.current) axisMax.current = bucketMax;
+  const bucketUpperMax = bucketMax + bucketStep;
+  if (axisMax.current === null || bucketUpperMax > axisMax.current) axisMax.current = bucketUpperMax;
 
   const minVal = axisMin.current;
   const maxVal = axisMax.current;
   const maxCount = Math.max(...displayBuckets.map((b) => b.count), 1);
 
   const fromNum = localFrom !== "" ? parseFloat(localFrom) : minVal;
+  // toNum is the upper bound; axis position is at toNum (right edge of last bucket)
   const toNum   = localTo   !== "" ? parseFloat(localTo)   : maxVal;
 
   const W = 188, H = 52, PAD = 8, TRACK_Y = H - 10;
@@ -489,9 +497,16 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
     if (!dragging.current || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const v = xToVal(e.clientX - rect.left);
-    const r = round(v);
-    if (dragging.current === "from") setLocalFrom(String(Math.min(r, toNum)));
-    else                             setLocalTo(String(Math.max(r, fromNum)));
+    if (dragging.current === "from") {
+      // from snaps to bucket lower bounds
+      const r = round(v);
+      setLocalFrom(String(Math.min(r, toNum - bucketStep)));
+    } else {
+      // to snaps to bucket upper bounds (lower bound + step)
+      const lower = round(v - bucketStep / 2);
+      const upper = lower + bucketStep;
+      setLocalTo(String(Math.max(upper, fromNum + bucketStep)));
+    }
   };
 
   const commitDrag = () => {
@@ -545,7 +560,7 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
           const bx = valToX(b.display);
           const t = b.count / maxCount;
           const bh = Math.max(2, scaleCount(t, scale) * (TRACK_Y - 4));
-          const active = b.display >= fromNum && b.display <= toNum;
+          const active = b.display >= fromNum && b.display < toNum;
           const label = `${formatLabel(b.display)}: ${b.count.toLocaleString()} books`;
           return (
             <rect key={i} x={bx - barW / 2} y={TRACK_Y - bh} width={barW} height={bh}
