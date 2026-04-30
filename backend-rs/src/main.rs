@@ -21,15 +21,14 @@ use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub use config::Config;
-pub use es::build_http_client;
+pub use es::{build_http_client, HistBounds};
 
 /// Shared state injected into every handler by axum's `State` extractor.
-/// Both fields are cheap to clone: `Config` is a plain struct of strings,
-/// `reqwest::Client` holds an internal `Arc`.
 #[derive(Clone)]
 pub struct AppState {
     pub config: Config,
     pub client: reqwest::Client,
+    pub hist_bounds: HistBounds,
 }
 
 #[tokio::main]
@@ -68,9 +67,14 @@ async fn main() {
     // Probe ES in the background — the HTTP server starts immediately.
     tokio::spawn(es::wait_for_es_server(client.clone(), config.es_url.clone()));
 
+    // Load histogram bounds (best-effort; uses defaults if not yet populated).
+    let hist_bounds = es::load_hist_bounds(&client, &config.es_url).await;
+    tracing::info!(readers_num_max = hist_bounds.readers_num_max, "Histogram bounds loaded");
+
     let state = AppState {
         config: config.clone(),
         client,
+        hist_bounds,
     };
 
     // Build CORS layer.

@@ -297,6 +297,64 @@ func refreshIndex() error {
 	return nil
 }
 
+// ─── Histogram bounds ─────────────────────────────────────────────────────────
+
+// roundUpNice rounds n up to a "nice" number suitable as a histogram upper bound.
+// E.g. 123456 → 200000, 45000 → 50000, 8200 → 10000.
+func roundUpNice(n int) int {
+	if n <= 0 {
+		return 1000
+	}
+	magnitude := 1
+	for magnitude*10 <= n {
+		magnitude *= 10
+	}
+	// Round up to the nearest multiple of magnitude
+	return ((n + magnitude - 1) / magnitude) * magnitude
+}
+
+// computeAndStoreHistBounds queries the actual max values from the books index
+// and stores rounded-up bounds in books_meta for the server to use.
+func computeAndStoreHistBounds() error {
+	resp, err := esRequest("POST", "/"+index+"/_search", M{
+		"size": 0,
+		"aggs": M{
+			"readers_max": M{"max": M{"field": "readersNum"}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("querying hist bounds: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Aggregations struct {
+			ReadersMax struct {
+				Value *float64 `json:"value"`
+			} `json:"readers_max"`
+		} `json:"aggregations"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decoding hist bounds: %w", err)
+	}
+
+	readersMax := 100000 // safe default
+	if v := result.Aggregations.ReadersMax.Value; v != nil {
+		readersMax = roundUpNice(int(*v))
+	}
+
+	log.Printf("Histogram bounds: readersNum max=%d (rounded up)", readersMax)
+
+	// Store in books_meta
+	doc := M{"readersNum_max": readersMax}
+	storeResp, err := esRequest("PUT", "/"+metaIndex+"/_doc/"+metaID, doc)
+	if err != nil {
+		return fmt.Errorf("storing hist bounds: %w", err)
+	}
+	storeResp.Body.Close()
+	return nil
+}
+
 // ─── Bulk indexing ────────────────────────────────────────────────────────────
 
 // esBulk sends an NDJSON bulk request. The ES bulk API requires each action
@@ -454,6 +512,9 @@ func runImport() {
 
 	if err := refreshIndex(); err != nil {
 		log.Printf("Warning: refresh failed: %v", err)
+	}
+	if err := computeAndStoreHistBounds(); err != nil {
+		log.Printf("Warning: could not store histogram bounds: %v", err)
 	}
 	log.Println("Import complete!")
 }

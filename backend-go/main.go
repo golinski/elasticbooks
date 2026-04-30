@@ -171,6 +171,41 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ─── Histogram bounds (loaded from books_meta at startup) ─────────────────────
+
+const metaIndex = "books_meta"
+const metaID    = "histogram_bounds"
+
+type histBounds struct {
+	ReadersNumMax int `json:"readersNum_max"`
+}
+
+// cachedBounds holds the bounds loaded from ES. Defaults are used if the
+// meta document doesn't exist yet (e.g. before first import).
+var cachedBounds = histBounds{ReadersNumMax: 100000}
+
+func loadHistBounds() {
+	resp, err := esRequest("GET", "/"+metaIndex+"/_doc/"+metaID, nil)
+	if err != nil {
+		log.Printf("Warning: could not load histogram bounds: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		log.Printf("Histogram bounds not found in ES, using defaults")
+		return
+	}
+	var result struct {
+		Source histBounds `json:"_source"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Warning: could not decode histogram bounds: %v", err)
+		return
+	}
+	cachedBounds = result.Source
+	log.Printf("Loaded histogram bounds: readersNum_max=%d", cachedBounds.ReadersNumMax)
+}
+
 // ─── Query building ───────────────────────────────────────────────────────────
 
 func buildFilters(q url.Values) M {
@@ -568,10 +603,7 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers": M{"terms": M{"field": "publisher.keyword", "size": 20, "min_doc_count": 1}},
 			"pub_years":  M{"terms": M{"field": "pub_year", "size": 50, "order": M{"_key": "asc"}}},
 			"keywords":   M{"terms": M{"field": "keywords.keyword", "size": 30, "min_doc_count": 1}},
-			// Histogram aggs use global + filter so they are independent of the
-		// main query. Each one applies all active filters EXCEPT its own range,
-		// so the histogram shape reflects the full dataset narrowed by other
-		// filters (author, genre, etc.) but not by the histogram's own range.
+			// Histogram aggs: global → filtered → hist, independent of main query.
 		"rating_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "rating"), "aggs": M{
 				"hist": M{"histogram": M{
@@ -588,17 +620,17 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 					"field":           "readersNum",
 					"interval":        histInterval("readersNum", histBuckets),
 					"min_doc_count":   0,
-					"extended_bounds": M{"min": 0, "max": 500000},
+					"extended_bounds": M{"min": 0, "max": cachedBounds.ReadersNumMax},
 				}},
 			}},
 		}},
+		// cdate: no extended_bounds — show only years present in the data
 		"cdate_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
 				"hist": M{"date_histogram": M{
 					"field":             "cdate",
 					"calendar_interval": "year",
-					"min_doc_count":     0,
-					"extended_bounds":   M{"min": "2000-01-01", "max": "2030-01-01"},
+					"min_doc_count":     1,
 				}},
 			}},
 		}},
@@ -787,6 +819,17 @@ func main() {
 	}
 
 	go waitForES()
+	go func() {
+		// Wait for ES to be ready, then load histogram bounds.
+		// Retry a few times in case the meta index isn't populated yet.
+		for i := 0; i < 10; i++ {
+			if err := esPing(); err == nil {
+				loadHistBounds()
+				return
+			}
+			time.Sleep(3 * time.Second)
+		}
+	}()
 
 	addr := ":" + port
 	log.Printf("Backend running on %s", addr)

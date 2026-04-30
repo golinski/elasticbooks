@@ -89,6 +89,7 @@ pub async fn handle_books(
 
     let rating_interval    = hist_interval("rating",    hist_buckets);
     let rating_num_interval = hist_interval("ratingNum", hist_buckets);
+    let readers_num_max = state.hist_bounds.readers_num_max;
 
     let body = json!({
         "from": from,
@@ -124,10 +125,11 @@ pub async fn handle_books(
                         "field": "readersNum",
                         "interval": rating_num_interval,
                         "min_doc_count": 0,
-                        "extended_bounds": { "min": 0, "max": 500000 }
+                        "extended_bounds": { "min": 0, "max": readers_num_max }
                     }}}
                 }}
             },
+            // cdate: no extended_bounds — show only years present in the data
             "cdate_hist": {
                 "global": {},
                 "aggs": { "filtered": {
@@ -135,8 +137,7 @@ pub async fn handle_books(
                     "aggs": { "hist": { "date_histogram": {
                         "field": "cdate",
                         "calendar_interval": "year",
-                        "min_doc_count": 0,
-                        "extended_bounds": { "min": "2000-01-01", "max": "2030-01-01" }
+                        "min_doc_count": 1
                     }}}
                 }}
             }

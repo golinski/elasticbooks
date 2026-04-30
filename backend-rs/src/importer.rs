@@ -278,6 +278,49 @@ async fn refresh_index(client: &Client, es_url: &str) -> Result<()> {
     Ok(())
 }
 
+// ─── Histogram bounds ─────────────────────────────────────────────────────────
+
+/// Round n up to a "nice" number for use as a histogram upper bound.
+/// E.g. 123456 → 200000, 45000 → 50000, 8200 → 10000.
+fn round_up_nice(n: i64) -> i64 {
+    if n <= 0 { return 1000; }
+    let mut magnitude = 1i64;
+    while magnitude * 10 <= n {
+        magnitude *= 10;
+    }
+    ((n + magnitude - 1) / magnitude) * magnitude
+}
+
+/// Query the actual max of readersNum, round it up, and store in books_meta
+/// so the server can use it for stable histogram extended_bounds.
+async fn compute_and_store_hist_bounds(client: &Client, es_url: &str) {
+    let url = format!("{es_url}/{INDEX}/_search");
+    let body = json!({
+        "size": 0,
+        "aggs": { "readers_max": { "max": { "field": "readersNum" } } }
+    });
+    let (_, result) = match es_json(client, Method::POST, &url, Some(&body)).await {
+        Ok(r) => r,
+        Err(e) => { warn!("Could not query hist bounds: {e}"); return; }
+    };
+
+    let readers_max = result["aggregations"]["readers_max"]["value"]
+        .as_f64()
+        .map(|v| round_up_nice(v as i64))
+        .unwrap_or(100_000);
+
+    info!("Histogram bounds: readersNum max={readers_max} (rounded up)");
+
+    let meta_url = format!("{es_url}/{}/{}", crate::es::META_INDEX, crate::es::META_ID);
+    // Use _doc endpoint with PUT to upsert
+    let store_url = format!("{es_url}/{}/_doc/{}", crate::es::META_INDEX, crate::es::META_ID);
+    let doc = json!({ "readersNum_max": readers_max });
+    if let Err(e) = es_json(client, Method::PUT, &store_url, Some(&doc)).await {
+        warn!("Could not store hist bounds: {e}");
+    }
+    let _ = meta_url; // suppress unused warning
+}
+
 // ─── Bulk indexing ────────────────────────────────────────────────────────────
 
 /// Build an NDJSON bulk payload and send it to ES.
@@ -388,6 +431,7 @@ pub async fn run_import(config: &Config) -> Result<()> {
     if let Err(e) = refresh_index(&client, &config.es_url).await {
         warn!("Refresh failed: {e}");
     }
+    compute_and_store_hist_bounds(&client, &config.es_url).await;
     info!("Import complete!");
     Ok(())
 }

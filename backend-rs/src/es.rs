@@ -4,11 +4,42 @@
 /// minimal and the image small. All we need is JSON over HTTP.
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
 pub const INDEX: &str = "books";
+pub const META_INDEX: &str = "books_meta";
+pub const META_ID: &str = "histogram_bounds";
+
+/// Histogram bounds loaded from ES after import.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct HistBounds {
+    #[serde(rename = "readersNum_max", default = "default_readers_max")]
+    pub readers_num_max: i64,
+}
+
+fn default_readers_max() -> i64 { 100_000 }
+
+impl Default for HistBounds {
+    fn default() -> Self { Self { readers_num_max: 100_000 } }
+}
+
+/// Load histogram bounds from the books_meta index.
+/// Returns defaults if the document doesn't exist yet.
+pub async fn load_hist_bounds(client: &Client, es_url: &str) -> HistBounds {
+    let url = format!("{es_url}/{META_INDEX}/_doc/{META_ID}");
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().as_u16() == 200 => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(v) => serde_json::from_value(v["_source"].clone()).unwrap_or_default(),
+                Err(_) => HistBounds::default(),
+            }
+        }
+        _ => HistBounds::default(),
+    }
+}
 
 /// Shared HTTP client. `reqwest::Client` is cheap to clone (it holds an `Arc`
 /// internally) so we pass it around by value.
