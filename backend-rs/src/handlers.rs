@@ -102,19 +102,28 @@ pub async fn handle_books(
             "publishers": { "terms": { "field": "publisher.keyword", "size": 20, "min_doc_count": 1 } },
             "pub_years":  { "terms": { "field": "pub_year",          "size": 50, "order": { "_key": "asc" } } },
             "keywords":   { "terms": { "field": "keywords.keyword",  "size": 30, "min_doc_count": 1 } },
-            // Each histogram is wrapped in a filter that excludes its own range,
-            // so the histogram shape stays stable while the user drags the handles.
+            // Histogram aggs use global + filter so they are independent of the
+            // main query. Each one applies all active filters EXCEPT its own range.
             "rating_hist": {
-                "filter": build_filters_excluding(&params, &["rating_from", "rating_to"]),
-                "aggs": { "hist": { "histogram": { "field": "rating", "interval": rating_interval, "min_doc_count": 1 } } }
+                "global": {},
+                "aggs": { "filtered": {
+                    "filter": build_filters_excluding(&params, &["rating_from", "rating_to"]),
+                    "aggs": { "hist": { "histogram": { "field": "rating", "interval": rating_interval, "min_doc_count": 1 } } }
+                }}
             },
             "rating_num_hist": {
-                "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
-                "aggs": { "hist": { "histogram": { "field": "readersNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
+                "global": {},
+                "aggs": { "filtered": {
+                    "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
+                    "aggs": { "hist": { "histogram": { "field": "readersNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
+                }}
             },
             "cdate_hist": {
-                "filter": build_filters_excluding(&params, &["cdate_from", "cdate_to"]),
-                "aggs": { "hist": { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } } }
+                "global": {},
+                "aggs": { "filtered": {
+                    "filter": build_filters_excluding(&params, &["cdate_from", "cdate_to"]),
+                    "aggs": { "hist": { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } } }
+                }}
             }
         }
     });
@@ -156,9 +165,9 @@ pub async fn handle_books(
             "publishers":      agg_buckets(aggs, "publishers"),
             "pub_years":       agg_buckets(aggs, "pub_years"),
             "keywords":        agg_buckets(aggs, "keywords"),
-            "rating_hist":     nested_agg_buckets(aggs, "rating_hist",     "hist"),
-            "rating_num_hist": nested_agg_buckets(aggs, "rating_num_hist", "hist"),
-            "cdate_hist":      nested_agg_buckets(aggs, "cdate_hist",      "hist"),
+            "rating_hist":     nested_agg_buckets2(aggs, "rating_hist",     "filtered", "hist"),
+            "rating_num_hist": nested_agg_buckets2(aggs, "rating_num_hist", "filtered", "hist"),
+            "cdate_hist":      nested_agg_buckets2(aggs, "cdate_hist",      "filtered", "hist"),
         }
     }))
     .into_response())
@@ -234,6 +243,16 @@ fn agg_buckets<'a>(aggs: &'a Value, name: &str) -> &'a Value {
 fn nested_agg_buckets<'a>(aggs: &'a Value, outer: &str, inner: &str) -> &'a Value {
     aggs.get(outer)
         .and_then(|o| o.get(inner))
+        .and_then(|i| i.get("buckets"))
+        .unwrap_or(&Value::Null)
+}
+
+/// Extract buckets from a global → filter → histogram agg.
+/// ES shape: aggs[outer] = { doc_count, [mid]: { doc_count, [inner]: { buckets } } }
+fn nested_agg_buckets2<'a>(aggs: &'a Value, outer: &str, mid: &str, inner: &str) -> &'a Value {
+    aggs.get(outer)
+        .and_then(|o| o.get(mid))
+        .and_then(|m| m.get(inner))
         .and_then(|i| i.get("buckets"))
         .unwrap_or(&Value::Null)
 }

@@ -482,6 +482,39 @@ func nestedAggBuckets(aggs map[string]aggEntry, outer, inner string) []facetBuck
 	return out
 }
 
+// nestedAggBuckets2 extracts buckets from a global → filter → histogram agg.
+// ES shape: aggs[outer] = { doc_count, [mid]: { doc_count, [inner]: { buckets } } }
+func nestedAggBuckets2(aggs map[string]aggEntry, outer, mid, inner string) []facetBucket {
+	outerAgg, ok := aggs[outer]
+	if !ok || outerAgg.Extra == nil {
+		return []facetBucket{}
+	}
+	midRaw, ok := outerAgg.Extra[mid]
+	if !ok {
+		return []facetBucket{}
+	}
+	var midAgg aggEntry
+	if err := json.Unmarshal(midRaw, &midAgg); err != nil {
+		return []facetBucket{}
+	}
+	if midAgg.Extra == nil {
+		return []facetBucket{}
+	}
+	innerRaw, ok := midAgg.Extra[inner]
+	if !ok {
+		return []facetBucket{}
+	}
+	var innerAgg aggEntry
+	if err := json.Unmarshal(innerRaw, &innerAgg); err != nil {
+		return []facetBucket{}
+	}
+	out := make([]facetBucket, len(innerAgg.Buckets))
+	for i, b := range innerAgg.Buckets {
+		out[i] = facetBucket{Key: b.Key, DocCount: b.DocCount}
+	}
+	return out
+}
+
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -535,17 +568,25 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers": M{"terms": M{"field": "publisher.keyword", "size": 20, "min_doc_count": 1}},
 			"pub_years":  M{"terms": M{"field": "pub_year", "size": 50, "order": M{"_key": "asc"}}},
 			"keywords":   M{"terms": M{"field": "keywords.keyword", "size": 30, "min_doc_count": 1}},
-			// Each histogram is wrapped in a filter that excludes its own range,
-			// so the histogram shape stays stable while the user drags the handles.
-			"rating_hist": M{"filter": buildFiltersExcluding(q, "rating"), "aggs": M{
+			// Histogram aggs use global + filter so they are independent of the
+		// main query. Each one applies all active filters EXCEPT its own range,
+		// so the histogram shape reflects the full dataset narrowed by other
+		// filters (author, genre, etc.) but not by the histogram's own range.
+		"rating_hist": M{"global": M{}, "aggs": M{
+			"filtered": M{"filter": buildFiltersExcluding(q, "rating"), "aggs": M{
 				"hist": M{"histogram": M{"field": "rating", "interval": histInterval("rating", histBuckets), "min_doc_count": 1}},
 			}},
-			"rating_num_hist": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
+		}},
+		"rating_num_hist": M{"global": M{}, "aggs": M{
+			"filtered": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
 				"hist": M{"histogram": M{"field": "readersNum", "interval": histInterval("readersNum", histBuckets), "min_doc_count": 1}},
 			}},
-			"cdate_hist": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
+		}},
+		"cdate_hist": M{"global": M{}, "aggs": M{
+			"filtered": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
 				"hist": M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},
 			}},
+		}},
 		},
 	}
 
@@ -593,10 +634,10 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers":      aggBuckets(aggs, "publishers"),
 			"pub_years":       aggBuckets(aggs, "pub_years"),
 			"keywords":        aggBuckets(aggs, "keywords"),
-			// Nested: filter agg → inner hist agg → buckets
-			"rating_hist":     nestedAggBuckets(aggs, "rating_hist", "hist"),
-			"rating_num_hist": nestedAggBuckets(aggs, "rating_num_hist", "hist"),
-			"cdate_hist":      nestedAggBuckets(aggs, "cdate_hist", "hist"),
+			// Nested: global → filtered → hist → buckets
+			"rating_hist":     nestedAggBuckets2(aggs, "rating_hist", "filtered", "hist"),
+			"rating_num_hist": nestedAggBuckets2(aggs, "rating_num_hist", "filtered", "hist"),
+			"cdate_hist":      nestedAggBuckets2(aggs, "cdate_hist", "filtered", "hist"),
 		},
 	})
 }
