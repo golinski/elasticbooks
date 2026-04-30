@@ -25,7 +25,7 @@ const DEFAULT_PARAMS: SearchParams = {
   keyword_filter: [],
   year_from: "", year_to: "",
   rating_from: "", rating_to: "",
-  rating_num_from: "", rating_num_to: "",
+  readers_from: "", readers_to: "",
   cdate_from: "", cdate_to: "",
   sort: "title", dir: "asc", page: 1, size: 40,
 };
@@ -51,8 +51,8 @@ function parseQS(): SearchParams {
     year_to:   p.get("year_to")   ?? "",
     rating_from:     p.get("rating_from")     ?? "",
     rating_to:       p.get("rating_to")       ?? "",
-    rating_num_from: p.get("rating_num_from") ?? "",
-    rating_num_to:   p.get("rating_num_to")   ?? "",
+    readers_from:    p.get("readers_from")    ?? "",
+    readers_to:      p.get("readers_to")      ?? "",
     cdate_from:      p.get("cdate_from")      ?? "",
     cdate_to:        p.get("cdate_to")        ?? "",
     sort:      explicitSort ?? (hasQ ? "score" : "title"),
@@ -79,10 +79,10 @@ function toQS(s: SearchParams): string {
   s.keyword_filter.forEach((v)   => p.append("keyword_filter",   v));
   set("year_from", s.year_from);
   set("year_to",   s.year_to);
-  set("rating_from",     s.rating_from);
-  set("rating_to",       s.rating_to);
-  set("rating_num_from", s.rating_num_from);
-  set("rating_num_to",   s.rating_num_to);
+  set("rating_from",  s.rating_from);
+  set("rating_to",    s.rating_to);
+  set("readers_from", s.readers_from);
+  set("readers_to",   s.readers_to);
   set("cdate_from",      s.cdate_from);
   set("cdate_to",        s.cdate_to);
   if (s.sort !== "title") p.set("sort", s.sort);
@@ -278,7 +278,7 @@ function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCard
     ? <span className="rating-badge score-badge" title={`Relevance: ${book._score.toFixed(2)}`}>★{book._score.toFixed(1)}</span>
     : null;
 
-  const ratingNumNode = book.readersNum != null
+  const readersNode = book.readersNum != null
     ? <span className="rating-badge popularity-badge" title={`${book.readersNum.toLocaleString()} readers`}>🕮{formatPopularity(book.readersNum)}</span>
     : null;
 
@@ -302,7 +302,7 @@ function BookCard({ book, onClick, sortMode, sidebarOpen, dataLetter }: BookCard
         <div className="card-badges">
           {scoreNode}
           {ratingNode}
-          {ratingNumNode}
+          {readersNode}
         </div>
       </div>
       <div className="card-title">{book.title}</div>
@@ -735,11 +735,6 @@ function Modal({ book, onClose, onFilterAuthor, onFilterSeries }: ModalProps) {
                 <span className="modal-label">Rating</span>
                 <span>
                   {(book.rating / 100).toFixed(1)}
-                  {book.ratingNum != null && (
-                    <span className="modal-ratingnum">
-                      {" "}({book.ratingNum.toLocaleString()} ratings)
-                    </span>
-                  )}
                   {book.readersNum != null && (
                     <span className="modal-ratingnum">
                       {" "}· {book.readersNum.toLocaleString()} readers
@@ -971,7 +966,7 @@ export default function App() {
     params.genre_filter.length || params.publisher_filter.length ||
     params.keyword_filter.length || params.year_from || params.year_to ||
     params.rating_from || params.rating_to ||
-    params.rating_num_from || params.rating_num_to ||
+    params.readers_from || params.readers_to ||
     params.cdate_from || params.cdate_to,
     [params]
   );
@@ -1094,12 +1089,12 @@ export default function App() {
                 />
                 <RangeHistogram
                   title="Number of readers"
-                  buckets={(facets.rating_num_hist ?? []) as HistBucket[]}
-                  from={params.rating_num_from}
-                  to={params.rating_num_to}
+                  buckets={(facets.readers_hist ?? []) as HistBucket[]}
+                  from={params.readers_from}
+                  to={params.readers_to}
                   keyToDisplay={(k) => k}
                   formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
-                  onChange={(f, t) => update({ rating_num_from: f, rating_num_to: t })}
+                  onChange={(f, t) => update({ readers_from: f, readers_to: t })}
                   histBuckets={HIST_BUCKETS.readersNum}
                 />
                 <RangeHistogram
@@ -1230,10 +1225,10 @@ export default function App() {
                   onRemove={() => update({ rating_from: "", rating_to: "" })}
                 />
               )}
-              {(params.rating_num_from || params.rating_num_to) && (
+              {(params.readers_from || params.readers_to) && (
                 <Chip
-                  label={`# ratings: ${params.rating_num_from || "…"}–${params.rating_num_to || "…"}`}
-                  onRemove={() => update({ rating_num_from: "", rating_num_to: "" })}
+                  label={`readers: ${params.readers_from || "…"}–${params.readers_to || "…"}`}
+                  onRemove={() => update({ readers_from: "", readers_to: "" })}
                 />
               )}
               {(params.cdate_from || params.cdate_to) && (

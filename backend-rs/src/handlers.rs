@@ -117,10 +117,10 @@ pub async fn handle_books(
                     }}}
                 }}
             },
-            "rating_num_hist": {
+            "readers_hist": {
                 "global": {},
                 "aggs": { "filtered": {
-                    "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
+                    "filter": build_filters_excluding(&params, &["readers_from", "readers_to"]),
                     "aggs": { "hist": { "histogram": {
                         "field": "readersNum",
                         "interval": rating_num_interval,
@@ -181,9 +181,9 @@ pub async fn handle_books(
             "publishers":      agg_buckets(aggs, "publishers"),
             "pub_years":       agg_buckets(aggs, "pub_years"),
             "keywords":        agg_buckets(aggs, "keywords"),
-            "rating_hist":     nested_agg_buckets2(aggs, "rating_hist",     "filtered", "hist"),
-            "rating_num_hist": nested_agg_buckets2(aggs, "rating_num_hist", "filtered", "hist"),
-            "cdate_hist":      nested_agg_buckets2(aggs, "cdate_hist",      "filtered", "hist"),
+            "rating_hist":  nested_agg_buckets2(aggs, "rating_hist",  "filtered", "hist"),
+            "readers_hist": nested_agg_buckets2(aggs, "readers_hist", "filtered", "hist"),
+            "cdate_hist":   nested_agg_buckets2(aggs, "cdate_hist",   "filtered", "hist"),
         }
     }))
     .into_response())

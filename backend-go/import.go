@@ -52,7 +52,6 @@ type tellicoEntry struct {
 	Genres      xmlStrings  `xml:"http://periapsis.org/tellico/ genres>genre"`
 	Keywords    xmlStrings  `xml:"http://periapsis.org/tellico/ keywords>keyword"`
 	Rating      string      `xml:"http://periapsis.org/tellico/ rating"`
-	RatingNum   string      `xml:"http://periapsis.org/tellico/ ratingNum"`
 	ReadersNum  string      `xml:"http://periapsis.org/tellico/ readersNum"`
 	Cover       string      `xml:"http://periapsis.org/tellico/ cover"`
 	Comments    string      `xml:"http://periapsis.org/tellico/ comments"`
@@ -90,7 +89,6 @@ type bookDoc struct {
 	Genres      []string `json:"genres"`
 	Keywords    []string `json:"keywords"`
 	Rating      *float64 `json:"rating"`
-	RatingNum   *int     `json:"ratingNum"`
 	ReadersNum  *int     `json:"readersNum"`
 	Cover       *string  `json:"cover"`
 	CoverURL    *string  `json:"cover_url"`
@@ -199,7 +197,6 @@ func parseEntry(e tellicoEntry, covers map[string]string) bookDoc {
 		Genres:      filterEmpty([]string(e.Genres)),
 		Keywords:    filterEmpty([]string(e.Keywords)),
 		Rating:      rating,
-		RatingNum:   parseIntPtr(e.RatingNum),
 		ReadersNum:  parseIntPtr(e.ReadersNum),
 		Cover:       coverFile,
 		CoverURL:    coverURL,
@@ -264,7 +261,6 @@ func createIndexMapping() error {
 				"genres":      M{"type": "text", "analyzer": "text_analyzer", "fields": M{"keyword": M{"type": "keyword"}}},
 				"keywords":    M{"type": "text", "analyzer": "text_analyzer", "fields": M{"keyword": M{"type": "keyword"}}},
 				"rating":      M{"type": "float"},
-				"ratingNum":   M{"type": "integer"},
 				"readersNum":  M{"type": "integer"},
 				"cover":       M{"type": "keyword"},
 				"cover_url":   M{"type": "keyword", "index": false},

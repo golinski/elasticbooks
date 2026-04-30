@@ -15,7 +15,6 @@ export interface Book {
   genres: string[];
   keywords: string[];
   rating: number | null;
-  ratingNum: number | null;
   readersNum: number | null;
   cover: string | null;
   cover_url: string | null;
@@ -41,7 +40,7 @@ export interface Facets {
   pub_years: FacetBucket[];
   keywords: FacetBucket[];
   rating_hist: FacetBucket[];
-  rating_num_hist: FacetBucket[];
+  readers_hist: FacetBucket[];
   cdate_hist: FacetBucket[];
 }
 
@@ -106,8 +105,8 @@ export interface SearchParams {
   year_to: string;
   rating_from: string;
   rating_to: string;
-  rating_num_from: string;
-  rating_num_to: string;
+  readers_from: string;
+  readers_to: string;
   cdate_from: string;
   cdate_to: string;
   sort: SortField;

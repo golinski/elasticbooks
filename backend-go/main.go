@@ -317,7 +317,7 @@ func buildFilters(q url.Values) M {
 		}
 	}
 
-	// Number-of-ratings range
+	// Number-of-readers range
 	if from, to := q.Get("rating_num_from"), q.Get("rating_num_to"); from != "" || to != "" {
 		rng := M{}
 		if from != "" {
@@ -331,7 +331,7 @@ func buildFilters(q url.Values) M {
 			}
 		}
 		if len(rng) > 0 {
-			filters = append(filters, M{"range": M{"ratingNum": rng}})
+			filters = append(filters, M{"range": M{"readersNum": rng}})
 		}
 	}
 
@@ -375,7 +375,7 @@ func buildFiltersExcluding(q url.Values, exclude string) M {
 	case "rating":
 		delete(clone, "rating_from")
 		delete(clone, "rating_to")
-	case "ratingNum":
+	case "readersNum":
 		delete(clone, "rating_num_from")
 		delete(clone, "rating_num_to")
 	case "cdate":
@@ -395,7 +395,7 @@ func histInterval(field string, buckets int) any {
 	case "rating":
 		// rating stored as raw Tellico value 0–1000
 		return 1000.0 / float64(buckets)
-	case "ratingNum", "readersNum":
+	case "readersNum":
 		// readersNum can span 0–100k+; use a round interval
 		intervals := []int{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
 		target := 200000 / buckets // assume max ~200k readers
@@ -614,8 +614,8 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 				}},
 			}},
 		}},
-		"rating_num_hist": M{"global": M{}, "aggs": M{
-			"filtered": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
+		"readers_hist": M{"global": M{}, "aggs": M{
+			"filtered": M{"filter": buildFiltersExcluding(q, "readersNum"), "aggs": M{
 				"hist": M{"histogram": M{
 					"field":           "readersNum",
 					"interval":        histInterval("readersNum", histBuckets),
@@ -681,10 +681,9 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"publishers":      aggBuckets(aggs, "publishers"),
 			"pub_years":       aggBuckets(aggs, "pub_years"),
 			"keywords":        aggBuckets(aggs, "keywords"),
-			// Nested: global → filtered → hist → buckets
-			"rating_hist":     nestedAggBuckets2(aggs, "rating_hist", "filtered", "hist"),
-			"rating_num_hist": nestedAggBuckets2(aggs, "rating_num_hist", "filtered", "hist"),
-			"cdate_hist":      nestedAggBuckets2(aggs, "cdate_hist", "filtered", "hist"),
+			"rating_hist":  nestedAggBuckets2(aggs, "rating_hist",  "filtered", "hist"),
+			"readers_hist": nestedAggBuckets2(aggs, "readers_hist", "filtered", "hist"),
+			"cdate_hist":   nestedAggBuckets2(aggs, "cdate_hist",   "filtered", "hist"),
 		},
 	})
 }

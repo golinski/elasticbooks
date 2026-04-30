@@ -187,7 +187,7 @@ pub fn build_filters(params: &MultiParams) -> Value {
         }
     }
 
-    // ── Number-of-ratings range ───────────────────────────────────────────────
+    // ── Number-of-readers range ───────────────────────────────────────────────
     let rn_from = get_one(params, "rating_num_from");
     let rn_to   = get_one(params, "rating_num_to");
     if !rn_from.is_empty() || !rn_to.is_empty() {
@@ -199,7 +199,7 @@ pub fn build_filters(params: &MultiParams) -> Value {
             rng.insert("lte".into(), json!(n));
         }
         if !rng.is_empty() {
-            filters.push(json!({ "range": { "ratingNum": rng } }));
+            filters.push(json!({ "range": { "readersNum": rng } }));
         }
     }
 
@@ -251,7 +251,7 @@ pub fn hist_interval(field: &str, buckets: usize) -> f64 {
     let b = buckets.max(1) as f64;
     match field {
         "rating"    => (1000.0 / b).max(1.0),
-        "ratingNum" | "readersNum" => {
+        "readersNum" => {
             // Pick a round interval targeting ~buckets bars across 0–200k
             let target = (200_000.0 / b) as i64;
             let candidates = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000];
