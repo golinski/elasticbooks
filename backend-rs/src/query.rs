@@ -188,8 +188,8 @@ pub fn build_filters(params: &MultiParams) -> Value {
     }
 
     // ── Number-of-readers range ───────────────────────────────────────────────
-    let rn_from = get_one(params, "rating_num_from");
-    let rn_to   = get_one(params, "rating_num_to");
+    let rn_from = get_one(params, "readers_from");
+    let rn_to   = get_one(params, "readers_to");
     if !rn_from.is_empty() || !rn_to.is_empty() {
         let mut rng = serde_json::Map::new();
         if let Ok(n) = rn_from.parse::<i64>() {

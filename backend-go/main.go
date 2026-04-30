@@ -318,7 +318,7 @@ func buildFilters(q url.Values) M {
 	}
 
 	// Number-of-readers range
-	if from, to := q.Get("rating_num_from"), q.Get("rating_num_to"); from != "" || to != "" {
+	if from, to := q.Get("readers_from"), q.Get("readers_to"); from != "" || to != "" {
 		rng := M{}
 		if from != "" {
 			if n, err := strconv.Atoi(from); err == nil {
@@ -376,8 +376,8 @@ func buildFiltersExcluding(q url.Values, exclude string) M {
 		delete(clone, "rating_from")
 		delete(clone, "rating_to")
 	case "readersNum":
-		delete(clone, "rating_num_from")
-		delete(clone, "rating_num_to")
+		delete(clone, "readers_from")
+		delete(clone, "readers_to")
 	case "cdate":
 		delete(clone, "cdate_from")
 		delete(clone, "cdate_to")
