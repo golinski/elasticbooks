@@ -492,15 +492,22 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
     if (!dragging.current || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const v = xToVal(e.clientX - rect.left);
+
     if (dragging.current === "from") {
-      // from snaps to bucket lower bounds
-      const r = round(v);
-      setLocalFrom(String(Math.min(r, toNum - bucketStep)));
+      // Snap to the nearest bucket lower bound that is <= toNum - bucketStep
+      const snapped = displayBuckets.reduce((best, b) =>
+        Math.abs(b.display - v) < Math.abs(best.display - v) ? b : best
+      ).display;
+      const clamped = Math.min(snapped, toNum - bucketStep);
+      setLocalFrom(String(round(clamped)));
     } else {
-      // to snaps to bucket upper bounds (lower bound + step)
-      const lower = round(v - bucketStep / 2);
-      const upper = lower + bucketStep;
-      setLocalTo(String(Math.max(upper, fromNum + bucketStep)));
+      // Snap to the nearest bucket upper bound (lower + step) that is >= fromNum + bucketStep
+      const snapped = displayBuckets.reduce((best, b) =>
+        Math.abs(b.display - (v - bucketStep)) < Math.abs(best.display - (v - bucketStep)) ? b : best
+      ).display;
+      const upper = snapped + bucketStep;
+      const clamped = Math.max(upper, fromNum + bucketStep);
+      setLocalTo(String(round(clamped)));
     }
   };
 
@@ -1075,14 +1082,19 @@ export default function App() {
                 <RangeHistogram
                   title="Rating"
                   buckets={(facets.rating_hist ?? []) as HistBucket[]}
-                  from={params.rating_from === "" ? "" : String(parseFloat(params.rating_from) / 100)}
-                  to={params.rating_to === "" ? "" : String(parseFloat(params.rating_to) / 100)}
+                  from={params.rating_from === "" ? "" : String(parseFloat((parseFloat(params.rating_from) / 100).toFixed(1)))}
+                  to={params.rating_to === "" ? "" : String(parseFloat((parseFloat(params.rating_to) / 100).toFixed(1)))}
                   keyToDisplay={(k) => k / 100}
                   formatLabel={(v) => v.toFixed(1)}
                   onChange={(f, t) => {
-                    // f and t are display-scale (0–10); convert to 0–1000 integers for params
-                    const toRaw = (s: string) => s === "" ? "" : String(Math.round(parseFloat(s) * 100));
-                    update({ rating_from: toRaw(f), rating_to: toRaw(t) });
+                    // f and t are display-scale (0–10); convert to 0–1000 integers.
+                    // t is the exclusive upper bound so subtract 1 for lte filter.
+                    const toRaw = (s: string, excl = false) => {
+                      if (s === "") return "";
+                      const n = Math.round(parseFloat(parseFloat(s).toFixed(1)) * 100);
+                      return String(excl ? n - 1 : n);
+                    };
+                    update({ rating_from: toRaw(f), rating_to: toRaw(t, true) });
                   }}
                   histBuckets={HIST_BUCKETS.rating}
                   round={(v) => Math.round(v * 10) / 10}
@@ -1094,8 +1106,13 @@ export default function App() {
                   to={params.readers_to}
                   keyToDisplay={(k) => k}
                   formatLabel={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
-                  onChange={(f, t) => update({ readers_from: f, readers_to: t })}
+                  onChange={(f, t) => {
+                    // t is the exclusive upper bound (next bucket start); subtract 1 for lte filter
+                    const adjTo = t === "" ? "" : String(Math.max(0, parseInt(t, 10) - 1));
+                    update({ readers_from: f, readers_to: adjTo });
+                  }}
                   histBuckets={HIST_BUCKETS.readersNum}
+                  round={Math.round}
                 />
                 <RangeHistogram
                   title="Date added"
