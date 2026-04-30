@@ -87,8 +87,8 @@ pub async fn handle_books(
 
     let hist_buckets: usize = get_one(&params, "hist_buckets").parse().unwrap_or(30).max(5).min(200);
 
-    let rating_interval    = hist_interval("rating",    hist_buckets);
-    let rating_num_interval = hist_interval("ratingNum", hist_buckets);
+    let rating_interval      = hist_interval("rating",     hist_buckets);
+    let rating_num_interval  = hist_interval("readersNum", hist_buckets);
     let readers_num_max = state.hist_bounds.readers_num_max;
 
     let body = json!({
