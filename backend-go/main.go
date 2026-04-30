@@ -177,12 +177,18 @@ const metaIndex = "books_meta"
 const metaID    = "histogram_bounds"
 
 type histBounds struct {
-	ReadersNumMax int `json:"readersNum_max"`
+	ReadersNumMax int    `json:"readersNum_max"`
+	CdateMin      string `json:"cdate_min"`
+	CdateMax      string `json:"cdate_max"`
 }
 
 // cachedBounds holds the bounds loaded from ES. Defaults are used if the
 // meta document doesn't exist yet (e.g. before first import).
-var cachedBounds = histBounds{ReadersNumMax: 100000}
+var cachedBounds = histBounds{
+	ReadersNumMax: 100000,
+	CdateMin:      "2000-01-01",
+	CdateMax:      "2030-01-01",
+}
 
 func loadHistBounds() {
 	resp, err := esRequest("GET", "/"+metaIndex+"/_doc/"+metaID, nil)
@@ -203,7 +209,8 @@ func loadHistBounds() {
 		return
 	}
 	cachedBounds = result.Source
-	log.Printf("Loaded histogram bounds: readersNum_max=%d", cachedBounds.ReadersNumMax)
+	log.Printf("Loaded histogram bounds: readersNum_max=%d cdate=%s–%s",
+		cachedBounds.ReadersNumMax, cachedBounds.CdateMin, cachedBounds.CdateMax)
 }
 
 // ─── Query building ───────────────────────────────────────────────────────────
@@ -624,13 +631,14 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 				}},
 			}},
 		}},
-		// cdate: no extended_bounds — show only years present in the data
+		// cdate: extended_bounds from actual data range computed at import time
 		"cdate_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
 				"hist": M{"date_histogram": M{
 					"field":             "cdate",
 					"calendar_interval": "year",
-					"min_doc_count":     1,
+					"min_doc_count":     0,
+					"extended_bounds":   M{"min": cachedBounds.CdateMin, "max": cachedBounds.CdateMax},
 				}},
 			}},
 		}},

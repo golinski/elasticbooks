@@ -286,13 +286,16 @@ fn round_up_nice(n: i64) -> i64 {
     ((n + magnitude - 1) / magnitude) * magnitude
 }
 
-/// Query the actual max of readersNum, round it up, and store in books_meta
-/// so the server can use it for stable histogram extended_bounds.
+/// Query the actual max of readersNum and cdate range, round up, and store in books_meta.
 async fn compute_and_store_hist_bounds(client: &Client, es_url: &str) {
     let url = format!("{es_url}/{INDEX}/_search");
     let body = json!({
         "size": 0,
-        "aggs": { "readers_max": { "max": { "field": "readersNum" } } }
+        "aggs": {
+            "readers_max": { "max": { "field": "readersNum" } },
+            "cdate_min":   { "min": { "field": "cdate" } },
+            "cdate_max":   { "max": { "field": "cdate" } }
+        }
     });
     let (_, result) = match es_json(client, Method::POST, &url, Some(&body)).await {
         Ok(r) => r,
@@ -304,16 +307,29 @@ async fn compute_and_store_hist_bounds(client: &Client, es_url: &str) {
         .map(|v| round_up_nice(v as i64))
         .unwrap_or(100_000);
 
-    info!("Histogram bounds: readersNum max={readers_max} (rounded up)");
+    // ES returns date stats as "value_as_string" in yyyy-MM-dd format
+    let cdate_min = result["aggregations"]["cdate_min"]["value_as_string"]
+        .as_str()
+        .and_then(|s| if s.len() >= 4 { Some(format!("{}-01-01", &s[..4])) } else { None })
+        .unwrap_or_else(|| "2000-01-01".into());
 
-    let meta_url = format!("{es_url}/{}/{}", crate::es::META_INDEX, crate::es::META_ID);
-    // Use _doc endpoint with PUT to upsert
+    let cdate_max = result["aggregations"]["cdate_max"]["value_as_string"]
+        .as_str()
+        .and_then(|s| if s.len() >= 4 { s[..4].parse::<i64>().ok() } else { None })
+        .map(|y| format!("{}-01-01", y + 1))
+        .unwrap_or_else(|| "2030-01-01".into());
+
+    info!("Histogram bounds: readersNum max={readers_max}, cdate {cdate_min}–{cdate_max}");
+
     let store_url = format!("{es_url}/{}/_doc/{}", crate::es::META_INDEX, crate::es::META_ID);
-    let doc = json!({ "readersNum_max": readers_max });
+    let doc = json!({
+        "readersNum_max": readers_max,
+        "cdate_min": cdate_min,
+        "cdate_max": cdate_max
+    });
     if let Err(e) = es_json(client, Method::PUT, &store_url, Some(&doc)).await {
         warn!("Could not store hist bounds: {e}");
     }
-    let _ = meta_url; // suppress unused warning
 }
 
 // ─── Bulk indexing ────────────────────────────────────────────────────────────

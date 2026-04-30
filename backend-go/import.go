@@ -316,6 +316,8 @@ func computeAndStoreHistBounds() error {
 		"size": 0,
 		"aggs": M{
 			"readers_max": M{"max": M{"field": "readersNum"}},
+			"cdate_min":   M{"min": M{"field": "cdate"}},
+			"cdate_max":   M{"max": M{"field": "cdate"}},
 		},
 	})
 	if err != nil {
@@ -328,6 +330,12 @@ func computeAndStoreHistBounds() error {
 			ReadersMax struct {
 				Value *float64 `json:"value"`
 			} `json:"readers_max"`
+			CdateMin struct {
+				ValueAsString string `json:"value_as_string"`
+			} `json:"cdate_min"`
+			CdateMax struct {
+				ValueAsString string `json:"value_as_string"`
+			} `json:"cdate_max"`
 		} `json:"aggregations"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -339,10 +347,27 @@ func computeAndStoreHistBounds() error {
 		readersMax = roundUpNice(int(*v))
 	}
 
-	log.Printf("Histogram bounds: readersNum max=%d (rounded up)", readersMax)
+	// Extract year from date string "YYYY-MM-DD" or "YYYY-..."
+	cdateMin := "2000-01-01"
+	cdateMax := "2030-01-01"
+	if s := result.Aggregations.CdateMin.ValueAsString; len(s) >= 4 {
+		cdateMin = s[:4] + "-01-01"
+	}
+	if s := result.Aggregations.CdateMax.ValueAsString; len(s) >= 4 {
+		// Round up to next year so the last year's bucket is fully included
+		year := 0
+		fmt.Sscanf(s[:4], "%d", &year)
+		cdateMax = fmt.Sprintf("%d-01-01", year+1)
+	}
+
+	log.Printf("Histogram bounds: readersNum max=%d, cdate %s–%s", readersMax, cdateMin, cdateMax)
 
 	// Store in books_meta
-	doc := M{"readersNum_max": readersMax}
+	doc := M{
+		"readersNum_max": readersMax,
+		"cdate_min":      cdateMin,
+		"cdate_max":      cdateMax,
+	}
 	storeResp, err := esRequest("PUT", "/"+metaIndex+"/_doc/"+metaID, doc)
 	if err != nil {
 		return fmt.Errorf("storing hist bounds: %w", err)
