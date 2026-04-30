@@ -87,9 +87,9 @@ pub async fn handle_books(
 
     let hist_buckets: usize = get_one(&params, "hist_buckets").parse().unwrap_or(30).max(5).min(200);
 
-    let rating_interval      = hist_interval("rating",     hist_buckets);
-    let rating_num_interval  = hist_interval("readersNum", hist_buckets);
-    let readers_num_max = state.hist_bounds.readers_num_max;
+    let rating_interval = hist_interval("rating", hist_buckets);
+    let readers_num_max      = state.hist_bounds.readers_num_max;
+    let readers_num_interval = state.hist_bounds.readers_num_interval;
     let cdate_min = &state.hist_bounds.cdate_min;
     let cdate_max = &state.hist_bounds.cdate_max;
 
@@ -125,7 +125,7 @@ pub async fn handle_books(
                     "filter": build_filters_excluding(&params, &["readers_from", "readers_to"]),
                     "aggs": { "hist": { "histogram": {
                         "field": "readersNum",
-                        "interval": rating_num_interval,
+                        "interval": readers_num_interval,
                         "min_doc_count": 0,
                         "extended_bounds": { "min": 0, "max": readers_num_max }
                     }}}

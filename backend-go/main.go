@@ -177,17 +177,19 @@ const metaIndex = "books_meta"
 const metaID    = "histogram_bounds"
 
 type histBounds struct {
-	ReadersNumMax int    `json:"readersNum_max"`
-	CdateMin      string `json:"cdate_min"`
-	CdateMax      string `json:"cdate_max"`
+	ReadersNumMax      int    `json:"readersNum_max"`
+	ReadersNumInterval int    `json:"readersNum_interval"`
+	CdateMin           string `json:"cdate_min"`
+	CdateMax           string `json:"cdate_max"`
 }
 
 // cachedBounds holds the bounds loaded from ES. Defaults are used if the
 // meta document doesn't exist yet (e.g. before first import).
 var cachedBounds = histBounds{
-	ReadersNumMax: 100000,
-	CdateMin:      "2000-01-01",
-	CdateMax:      "2030-01-01",
+	ReadersNumMax:      100000,
+	ReadersNumInterval: 1000,
+	CdateMin:           "2000-01-01",
+	CdateMax:           "2030-01-01",
 }
 
 func loadHistBounds() {
@@ -209,8 +211,9 @@ func loadHistBounds() {
 		return
 	}
 	cachedBounds = result.Source
-	log.Printf("Loaded histogram bounds: readersNum_max=%d cdate=%s–%s",
-		cachedBounds.ReadersNumMax, cachedBounds.CdateMin, cachedBounds.CdateMax)
+	log.Printf("Loaded histogram bounds: readersNum_max=%d interval=%d cdate=%s–%s",
+		cachedBounds.ReadersNumMax, cachedBounds.ReadersNumInterval,
+		cachedBounds.CdateMin, cachedBounds.CdateMax)
 }
 
 // ─── Query building ───────────────────────────────────────────────────────────
@@ -625,7 +628,7 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 			"filtered": M{"filter": buildFiltersExcluding(q, "readersNum"), "aggs": M{
 				"hist": M{"histogram": M{
 					"field":           "readersNum",
-					"interval":        histInterval("readersNum", histBuckets),
+					"interval":        cachedBounds.ReadersNumInterval,
 					"min_doc_count":   0,
 					"extended_bounds": M{"min": 0, "max": cachedBounds.ReadersNumMax},
 				}},

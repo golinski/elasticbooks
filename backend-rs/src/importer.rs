@@ -275,15 +275,22 @@ async fn refresh_index(client: &Client, es_url: &str) -> Result<()> {
 
 // ─── Histogram bounds ─────────────────────────────────────────────────────────
 
-/// Round n up to a "nice" number for use as a histogram upper bound.
-/// E.g. 123456 → 200000, 45000 → 50000, 8200 → 10000.
-fn round_up_nice(n: i64) -> i64 {
+/// Round n up to the nearest 1000. E.g. 123456 → 124000.
+fn round_up_to_thousand(n: i64) -> i64 {
     if n <= 0 { return 1000; }
-    let mut magnitude = 1i64;
-    while magnitude * 10 <= n {
-        magnitude *= 10;
+    ((n + 999) / 1000) * 1000
+}
+
+/// Pick the smallest round interval giving 50–100 buckets over [0, max].
+fn readers_interval(max: i64) -> i64 {
+    let candidates = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000i64];
+    for &iv in &candidates {
+        let buckets = max / iv;
+        if buckets >= 50 && buckets <= 100 {
+            return iv;
+        }
     }
-    ((n + magnitude - 1) / magnitude) * magnitude
+    (max / 75).max(1)
 }
 
 /// Query the actual max of readersNum and cdate range, round up, and store in books_meta.
@@ -304,8 +311,9 @@ async fn compute_and_store_hist_bounds(client: &Client, es_url: &str) {
 
     let readers_max = result["aggregations"]["readers_max"]["value"]
         .as_f64()
-        .map(|v| round_up_nice(v as i64))
+        .map(|v| round_up_to_thousand(v as i64))
         .unwrap_or(100_000);
+    let readers_iv = readers_interval(readers_max);
 
     // ES returns date stats as "value_as_string" in yyyy-MM-dd format
     let cdate_min = result["aggregations"]["cdate_min"]["value_as_string"]
@@ -319,11 +327,12 @@ async fn compute_and_store_hist_bounds(client: &Client, es_url: &str) {
         .map(|y| format!("{}-01-01", y + 1))
         .unwrap_or_else(|| "2030-01-01".into());
 
-    info!("Histogram bounds: readersNum max={readers_max}, cdate {cdate_min}–{cdate_max}");
+    info!("Histogram bounds: readersNum max={readers_max} interval={readers_iv}, cdate {cdate_min}–{cdate_max}");
 
     let store_url = format!("{es_url}/{}/_doc/{}", crate::es::META_INDEX, crate::es::META_ID);
     let doc = json!({
-        "readersNum_max": readers_max,
+        "readersNum_max":      readers_max,
+        "readersNum_interval": readers_iv,
         "cdate_min": cdate_min,
         "cdate_max": cdate_max
     });

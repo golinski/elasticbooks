@@ -18,20 +18,24 @@ pub const META_ID: &str = "histogram_bounds";
 pub struct HistBounds {
     #[serde(rename = "readersNum_max", default = "default_readers_max")]
     pub readers_num_max: i64,
+    #[serde(rename = "readersNum_interval", default = "default_readers_interval")]
+    pub readers_num_interval: i64,
     #[serde(rename = "cdate_min", default = "default_cdate_min")]
     pub cdate_min: String,
     #[serde(rename = "cdate_max", default = "default_cdate_max")]
     pub cdate_max: String,
 }
 
-fn default_readers_max() -> i64 { 100_000 }
-fn default_cdate_min() -> String { "2000-01-01".into() }
-fn default_cdate_max() -> String { "2030-01-01".into() }
+fn default_readers_max()      -> i64   { 100_000 }
+fn default_readers_interval() -> i64   { 1_000 }
+fn default_cdate_min()        -> String { "2000-01-01".into() }
+fn default_cdate_max()        -> String { "2030-01-01".into() }
 
 impl Default for HistBounds {
     fn default() -> Self {
         Self {
-            readers_num_max: 100_000,
+            readers_num_max:      100_000,
+            readers_num_interval: 1_000,
             cdate_min: "2000-01-01".into(),
             cdate_max: "2030-01-01".into(),
         }

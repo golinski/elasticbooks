@@ -295,18 +295,31 @@ func refreshIndex() error {
 
 // ─── Histogram bounds ─────────────────────────────────────────────────────────
 
-// roundUpNice rounds n up to a "nice" number suitable as a histogram upper bound.
-// E.g. 123456 → 200000, 45000 → 50000, 8200 → 10000.
-func roundUpNice(n int) int {
+// roundUpToThousand rounds n up to the nearest 1000.
+// E.g. 123456 → 124000, 100000 → 100000.
+func roundUpToThousand(n int) int {
 	if n <= 0 {
 		return 1000
 	}
-	magnitude := 1
-	for magnitude*10 <= n {
-		magnitude *= 10
+	return ((n + 999) / 1000) * 1000
+}
+
+// readersInterval picks the smallest round interval from a candidate list
+// such that max/interval is between 50 and 100 buckets.
+func readersInterval(max int) int {
+	candidates := []int{100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000}
+	for _, iv := range candidates {
+		buckets := max / iv
+		if buckets >= 50 && buckets <= 100 {
+			return iv
+		}
 	}
-	// Round up to the nearest multiple of magnitude
-	return ((n + magnitude - 1) / magnitude) * magnitude
+	// Fallback: aim for ~75 buckets
+	iv := max / 75
+	if iv < 1 {
+		iv = 1
+	}
+	return iv
 }
 
 // computeAndStoreHistBounds queries the actual max values from the books index
@@ -343,8 +356,10 @@ func computeAndStoreHistBounds() error {
 	}
 
 	readersMax := 100000 // safe default
+	readersIv  := 1000
 	if v := result.Aggregations.ReadersMax.Value; v != nil {
-		readersMax = roundUpNice(int(*v))
+		readersMax = roundUpToThousand(int(*v))
+		readersIv  = readersInterval(readersMax)
 	}
 
 	// Extract year from date string "YYYY-MM-DD" or "YYYY-..."
@@ -360,13 +375,15 @@ func computeAndStoreHistBounds() error {
 		cdateMax = fmt.Sprintf("%d-01-01", year+1)
 	}
 
-	log.Printf("Histogram bounds: readersNum max=%d, cdate %s–%s", readersMax, cdateMin, cdateMax)
+	log.Printf("Histogram bounds: readersNum max=%d interval=%d, cdate %s–%s",
+		readersMax, readersIv, cdateMin, cdateMax)
 
 	// Store in books_meta
 	doc := M{
-		"readersNum_max": readersMax,
-		"cdate_min":      cdateMin,
-		"cdate_max":      cdateMax,
+		"readersNum_max":      readersMax,
+		"readersNum_interval": readersIv,
+		"cdate_min":           cdateMin,
+		"cdate_max":           cdateMax,
 	}
 	storeResp, err := esRequest("PUT", "/"+metaIndex+"/_doc/"+metaID, doc)
 	if err != nil {
