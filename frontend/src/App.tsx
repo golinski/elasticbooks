@@ -445,38 +445,33 @@ function RangeHistogram({ title, buckets, from, to, keyToDisplay, formatLabel, o
   const dragging = useRef<"from" | "to" | null>(null);
   const [scale, setScale] = useState<HistScale>("linear");
 
-  // Lock in the widest axis range ever seen so that filtering on this
-  // histogram never shrinks the axis and traps the handles.
-  const axisMin = useRef<number | null>(null);
-  const axisMax = useRef<number | null>(null);
-
   // Keep local state in sync when external params change (e.g. URL navigation)
   useEffect(() => { setLocalFrom(from); }, [from]);
   useEffect(() => { setLocalTo(to);     }, [to]);
 
   if (!buckets || buckets.length === 0) return null;
 
+  // With extended_bounds the backend always returns a complete, stable set of
+  // buckets. No axis-locking needed — just use the bucket range directly.
   const displayBuckets = buckets.map((b) => ({ display: keyToDisplay(b.key), count: b.doc_count }));
+
+  if (displayBuckets.length === 0) return null;
   const bucketMin = displayBuckets[0].display;
   const bucketMax = displayBuckets[displayBuckets.length - 1].display;
 
-  // Bucket step in display scale — used to compute upper bounds.
+  // Bucket step: uniform gap between consecutive buckets (they're always
+  // evenly spaced now that extended_bounds fills in the zeros).
   const bucketStep = displayBuckets.length >= 2
     ? displayBuckets[1].display - displayBuckets[0].display
     : 1;
 
-  // Expand the remembered axis — never shrink it.
-  // axisMax tracks the upper bound of the last bucket (bucketMax + bucketStep).
-  if (axisMin.current === null || bucketMin < axisMin.current) axisMin.current = bucketMin;
-  const bucketUpperMax = bucketMax + bucketStep;
-  if (axisMax.current === null || bucketUpperMax > axisMax.current) axisMax.current = bucketUpperMax;
-
-  const minVal = axisMin.current;
-  const maxVal = axisMax.current;
+  // Axis spans from bucketMin to bucketMax + bucketStep (upper bound of last bucket).
+  const minVal = bucketMin;
+  const maxVal = bucketMax + bucketStep;
   const maxCount = Math.max(...displayBuckets.map((b) => b.count), 1);
 
   const fromNum = localFrom !== "" ? parseFloat(localFrom) : minVal;
-  // toNum is the upper bound; axis position is at toNum (right edge of last bucket)
+  // toNum is the upper bound of the last included bucket.
   const toNum   = localTo   !== "" ? parseFloat(localTo)   : maxVal;
 
   const W = 188, H = 52, PAD = 8, TRACK_Y = H - 10;

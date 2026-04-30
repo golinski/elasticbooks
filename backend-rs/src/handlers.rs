@@ -108,21 +108,36 @@ pub async fn handle_books(
                 "global": {},
                 "aggs": { "filtered": {
                     "filter": build_filters_excluding(&params, &["rating_from", "rating_to"]),
-                    "aggs": { "hist": { "histogram": { "field": "rating", "interval": rating_interval, "min_doc_count": 1 } } }
+                    "aggs": { "hist": { "histogram": {
+                        "field": "rating",
+                        "interval": 10,
+                        "min_doc_count": 0,
+                        "extended_bounds": { "min": 0, "max": 1000 }
+                    }}}
                 }}
             },
             "rating_num_hist": {
                 "global": {},
                 "aggs": { "filtered": {
                     "filter": build_filters_excluding(&params, &["rating_num_from", "rating_num_to"]),
-                    "aggs": { "hist": { "histogram": { "field": "readersNum", "interval": rating_num_interval, "min_doc_count": 1 } } }
+                    "aggs": { "hist": { "histogram": {
+                        "field": "readersNum",
+                        "interval": rating_num_interval,
+                        "min_doc_count": 0,
+                        "extended_bounds": { "min": 0, "max": 500000 }
+                    }}}
                 }}
             },
             "cdate_hist": {
                 "global": {},
                 "aggs": { "filtered": {
                     "filter": build_filters_excluding(&params, &["cdate_from", "cdate_to"]),
-                    "aggs": { "hist": { "date_histogram": { "field": "cdate", "calendar_interval": "year", "min_doc_count": 1 } } }
+                    "aggs": { "hist": { "date_histogram": {
+                        "field": "cdate",
+                        "calendar_interval": "year",
+                        "min_doc_count": 0,
+                        "extended_bounds": { "min": "2000-01-01", "max": "2030-01-01" }
+                    }}}
                 }}
             }
         }

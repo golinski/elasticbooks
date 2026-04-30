@@ -574,17 +574,32 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 		// filters (author, genre, etc.) but not by the histogram's own range.
 		"rating_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "rating"), "aggs": M{
-				"hist": M{"histogram": M{"field": "rating", "interval": histInterval("rating", histBuckets), "min_doc_count": 1}},
+				"hist": M{"histogram": M{
+					"field":           "rating",
+					"interval":        10,
+					"min_doc_count":   0,
+					"extended_bounds": M{"min": 0, "max": 1000},
+				}},
 			}},
 		}},
 		"rating_num_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "ratingNum"), "aggs": M{
-				"hist": M{"histogram": M{"field": "readersNum", "interval": histInterval("readersNum", histBuckets), "min_doc_count": 1}},
+				"hist": M{"histogram": M{
+					"field":           "readersNum",
+					"interval":        histInterval("readersNum", histBuckets),
+					"min_doc_count":   0,
+					"extended_bounds": M{"min": 0, "max": 500000},
+				}},
 			}},
 		}},
 		"cdate_hist": M{"global": M{}, "aggs": M{
 			"filtered": M{"filter": buildFiltersExcluding(q, "cdate"), "aggs": M{
-				"hist": M{"date_histogram": M{"field": "cdate", "calendar_interval": "year", "min_doc_count": 1}},
+				"hist": M{"date_histogram": M{
+					"field":             "cdate",
+					"calendar_interval": "year",
+					"min_doc_count":     0,
+					"extended_bounds":   M{"min": "2000-01-01", "max": "2030-01-01"},
+				}},
 			}},
 		}},
 		},
